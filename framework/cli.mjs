@@ -16,6 +16,10 @@ const HELP = `h2g2 — notebook tools
   chapter <name> --title "T" [--id ID] [--summary "S"] [--after ID | --before ID | --parent ID] [--file F]
       Add a TOC entry and create chapters/<id>.md (with "# T") if it does not exist.
 
+  plan <name> --title "T" [--id ID] [--summary "S"] [--after ID | --before ID | --parent ID]
+      Add a PLANNED chapter to the TOC (no file yet; shown greyed out in the viewer).
+      Write it later with: chapter <name> --id ID   (promotes the planned entry in place)
+
   ref <name> --category "C" --title "T" [--url U] [--source web|confluence|twg|jira|bitbucket|other]
              [--chapter ID] [--note "N"] [--id ID]
       Add a reference (deduplicated by URL). Prints the id to cite as [@id].
@@ -51,7 +55,12 @@ try {
     }
     case 'chapter': {
       const c = await addChapter(need(name, '<name>'), values);
-      print(`Added chapter ${c.id} -> ${path.relative(ROOT, c.path)}`, c);
+      print(`${c.promoted ? 'Promoted planned chapter' : 'Added chapter'} ${c.id} -> ${path.relative(ROOT, c.path)}`, c);
+      break;
+    }
+    case 'plan': {
+      const c = await addChapter(need(name, '<name>'), { ...values, planned: true });
+      print(`Planned chapter ${c.id}`, c);
       break;
     }
     case 'ref': {
@@ -71,7 +80,7 @@ try {
       const lines = flatten(nb.toc.chapters).map((c) => {
         const pad = '  '.repeat(c.depth);
         const topics = c.topics.map((t) => `${pad}    · ${t.title}`).join('\n');
-        return `${pad}- ${c.title}  [${c.id}] ${c.file}${c.missing ? '  (MISSING)' : ''}${topics ? '\n' + topics : ''}`;
+        return `${pad}- ${c.title}  [${c.id}] ${c.status === 'planned' ? '(planned)' : c.file}${c.missing ? '  (MISSING)' : ''}${topics ? '\n' + topics : ''}`;
       });
       print(`${nb.meta.title} (${nb.meta.scope})\n${lines.join('\n') || '(no chapters)'}`, nb.toc);
       break;

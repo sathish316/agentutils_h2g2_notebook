@@ -7,7 +7,7 @@ Every notebook is a structured guide to learn about a topic. Every notebook cont
 2. Chapters - notes about specific topics, informational, visual (mermaid diagrams, svg diagrams, html visualizations etc), hands-on explorations and deep dives about a specific topic
 3. References - list of references to the sources of information.
 
-The first chapter is created based on the initial user questions about a topic.
+The first chapter is created based on the initial user questions about a topic. The first request generates only the table of contents, the first chapter, and the references used by that chapter, never multiple chapters in one go. The initial table of contents is an ideal learning plan: besides the first chapter it lists planned chapters, shown greyed out as pending. Based on what the user asks at the end of each chapter, the table of contents is revised (planned chapters added, edited, reordered or dropped), and each chapter or topic is generated one at a time, when the reader asks for it.
 After a chapter is read by a user, they can track read/unread topics in a checkbox per topic using Browser memory.
 Every chapter comes with a textbox that allows the user to ask further questions and get new chapters or topics generated per topic.
 

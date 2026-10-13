@@ -94,19 +94,25 @@ export function mountZoomPan(figure, content, { height } = {}) {
   figure.addAction('expand', 'Fullscreen', () => figure.toggleFullscreen());
   figure.onFullscreen(() => fit());
 
-  const init = () => {
-    measure();
+  // Height follows the diagram's aspect ratio at the current width (unless fixed via height=).
+  // Recomputed on resize because pages are built off-screen, before they have a width.
+  let lastW = 0;
+  const size = () => {
+    if (!natW || figure.el.classList.contains('fullscreen')) return;
+    const vw = view.clientWidth;
+    if (!vw) return;
     if (height) view.style.setProperty('--zp-h', `${height}px`);
-    else {
-      const avail = Math.max(200, view.clientWidth - 32);
-      const auto = Math.round(natH * Math.min(1.5, avail / natW) + 32);
+    else if (vw !== lastW) {
+      const auto = Math.round(natH * Math.min(1.5, (vw - 32) / natW) + 32);
       view.style.setProperty('--zp-h', `${Math.max(140, Math.min(640, auto))}px`);
     }
+    lastW = vw;
     fit();
   };
+  const init = () => { measure(); size(); };
   if (content instanceof HTMLImageElement && !content.complete) content.addEventListener('load', init, { once: true });
   else requestAnimationFrame(init);
-  new ResizeObserver(() => { if (!figure.el.classList.contains('fullscreen')) fit(); }).observe(view);
+  new ResizeObserver(size).observe(view);
   return { fit };
 }
 
