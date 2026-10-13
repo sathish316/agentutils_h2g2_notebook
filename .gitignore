@@ -1,3 +1,7 @@
 node_modules/
 .h2g2/
 .DS_Store
+
+# Notebooks are personal; only the Temporal notebook is committed as a sample.
+notebooks/*
+!notebooks/Temporal/
