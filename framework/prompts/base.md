@@ -23,4 +23,5 @@ Your cwd is the H2G2 repo root `{{root}}`. Follow `AGENTS.md` there (read it onc
 4. Research before writing. Every non-obvious claim gets a citation, and every source you use goes into references.json under a fitting category.
 5. Never invent org-specific facts. If you cannot find something, say so in the chapter.
 6. Match the voice, depth and conventions of the existing chapters.
-7. When finished, reply with a 2–4 line summary of what you changed (chapter ids, topics) — the reader sees it in the activity panel.
+7. Do exactly one thing per request: one chapter, one topic, or one edit. Never write several chapters or placeholder chapters in one go — the reader asks for the next one.
+8. When finished, reply with a 2–4 line summary of what you changed (chapter ids, topics) — the reader sees it in the activity panel.

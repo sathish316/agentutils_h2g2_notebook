@@ -38,3 +38,22 @@ test('notebook lifecycle + validation', async (t) => {
   assert.equal(nb.toc.chapters[1].children[0].id, 'child');
   assert.deepEqual(nb.toc.chapters[1].topics, [{ id: 'one', title: 'One' }]);
 });
+
+test('planned chapters are promoted in place', async (t) => {
+  const name = `${NAME}-plan`;
+  t.after(() => fs.rm(path.join(NOTEBOOKS_DIR, name), { recursive: true, force: true }));
+  await createNotebook(name, { title: 'Plan', scope: 'general' });
+  await addChapter(name, { title: 'One' });
+  await addChapter(name, { title: 'Two', summary: 'later', planned: true });
+  await addChapter(name, { title: 'Three', planned: true });
+  assert.deepEqual((await validateNotebook(name)).errors, []);
+  let nb = await loadNotebookForViewer(name);
+  assert.equal(nb.toc.chapters[1].status, 'planned');
+  assert.equal(nb.toc.chapters[1].file, undefined);
+  const promoted = await addChapter(name, { id: 'two' });
+  assert.ok(promoted.promoted);
+  nb = await loadNotebookForViewer(name);
+  assert.deepEqual(nb.toc.chapters.map((c) => [c.id, c.status || 'written']), [['one', 'written'], ['two', 'written'], ['three', 'planned']]);
+  assert.equal(nb.toc.chapters[1].summary, 'later');
+  assert.deepEqual((await validateNotebook(name)).errors, []);
+});

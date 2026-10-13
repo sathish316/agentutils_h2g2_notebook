@@ -78,6 +78,7 @@ export async function loadNotebookForViewer(name) {
   const enrich = async (chapters) => Promise.all((chapters || []).map(async (c) => {
     let topics = [];
     let missing = false;
+    if (c.status === 'planned') return { ...c, topics, missing, children: await enrich(c.children) };
     try {
       topics = extractTopics(await fs.readFile(path.join(nb.dir, c.file), 'utf8'));
     } catch {
@@ -118,23 +119,48 @@ function findIn(chapters, id) {
   return null;
 }
 
-/**
- * Add a chapter to the TOC (and create its markdown file if missing).
- * Position: { after } | { before } | { parent } (appended as child) | {} (appended at top level).
- */
-export async function addChapter(name, { id, title, summary, after, before, parent, file }) {
-  if (!title) throw new Error('title is required');
-  const nb = await loadNotebook(name);
-  id = id || slugify(title);
-  if (findIn(nb.toc.chapters, id)) throw new Error(`Chapter id already exists: ${id}`);
-  file = file || `chapters/${id}.md`;
+async function ensureChapterFile(nb, file, title) {
   const abs = path.resolve(nb.dir, file);
   if (!abs.startsWith(nb.dir + path.sep)) throw new Error('Chapter file must be inside the notebook');
   if (!fss.existsSync(abs)) {
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, `# ${title}\n\n`);
   }
-  const entry = { id, title, file, ...(summary ? { summary } : {}) };
+  return abs;
+}
+
+/**
+ * Add a chapter to the TOC (and create its markdown file if missing).
+ * Position: { after } | { before } | { parent } (appended as child) | {} (appended at top level).
+ * planned: true adds a TOC-only entry (status "planned", no file) — part of the learning plan, not written yet.
+ * If `id` names an existing planned entry, it is promoted to a written chapter in place.
+ */
+export async function addChapter(name, { id, title, summary, after, before, parent, file, planned = false }) {
+  const nb = await loadNotebook(name);
+  const existing = id && findIn(nb.toc.chapters, id);
+  if (existing && existing.node.status === 'planned' && !planned) {
+    const node = existing.node;
+    if (title) node.title = title;
+    if (summary) node.summary = summary;
+    node.file = file || `chapters/${node.id}.md`;
+    delete node.status;
+    const abs = await ensureChapterFile(nb, node.file, node.title);
+    await writeJson(path.join(nb.dir, 'toc.json'), nb.toc);
+    await touch(nb);
+    return { ...node, path: abs, promoted: true };
+  }
+  if (!title) throw new Error('title is required');
+  id = id || slugify(title);
+  if (existing || findIn(nb.toc.chapters, id)) throw new Error(`Chapter id already exists: ${id}`);
+  let entry;
+  let abs = null;
+  if (planned) {
+    entry = { id, title, ...(summary ? { summary } : {}), status: 'planned' };
+  } else {
+    file = file || `chapters/${id}.md`;
+    abs = await ensureChapterFile(nb, file, title);
+    entry = { id, title, file, ...(summary ? { summary } : {}) };
+  }
   const anchor = after || before;
   if (anchor) {
     const hit = findIn(nb.toc.chapters, anchor);
@@ -210,9 +236,15 @@ export async function validateNotebook(name) {
   const files = new Set();
   const cited = new Set();
   for (const c of flatten(nb.toc.chapters)) {
+    if (c.id && ids.has(c.id)) errors.push(`toc.json: duplicate chapter id ${c.id}`);
+    if (c.id) ids.add(c.id);
+    if (c.status === 'planned') {
+      if (!c.id || !c.title) errors.push(`toc.json: planned entry needs id and title (${JSON.stringify(c.title || c.id)})`);
+      if (c.file) warnings.push(`toc.json: planned chapter ${c.id} has a file; remove "status" once it is written`);
+      continue;
+    }
+    if (c.status) errors.push(`toc.json: ${c.id} has unknown status "${c.status}" (only "planned" is allowed)`);
     if (!c.id || !c.title || !c.file) { errors.push(`toc.json: entry needs id, title, file (${JSON.stringify(c.title || c.id)})`); continue; }
-    if (ids.has(c.id)) errors.push(`toc.json: duplicate chapter id ${c.id}`);
-    ids.add(c.id);
     const abs = path.resolve(nb.dir, c.file);
     files.add(abs);
     let md;
