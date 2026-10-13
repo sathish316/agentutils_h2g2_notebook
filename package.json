@@ -1,0 +1,25 @@
+{
+  "name": "h2g2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hitchhiker's Guide to the Galaxy: dynamic, agent-built learning notebooks",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "h2g2": "framework/cli.mjs"
+  },
+  "scripts": {
+    "start": "node framework/server/index.mjs",
+    "dev": "node --watch-path=framework/server --watch-path=framework/lib framework/server/index.mjs",
+    "h2g2": "node framework/cli.mjs",
+    "test": "node --test \"framework/test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0",
+    "mermaid": "^12.1.0",
+    "sql.js": "^1.14.2"
+  }
+}
