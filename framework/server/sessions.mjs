@@ -29,6 +29,8 @@ function summarizeToolContent(content) {
   });
 }
 
+const allowOption = (options = []) => options.find((o) => o.kind === 'allow_always') || options.find((o) => o.kind === 'allow_once');
+
 export class SessionManager {
   channels = new Map();
   sessions = new Map();
@@ -42,7 +44,7 @@ export class SessionManager {
   #channel(notebook) {
     let ch = this.channels.get(notebook);
     if (!ch) {
-      ch = { seq: 0, events: [], subscribers: new Set(), queue: [], running: null, permissions: new Map() };
+      ch = { seq: 0, events: [], subscribers: new Set(), queue: [], running: null, permissions: new Map(), autoApprove: null };
       this.channels.set(notebook, ch);
     }
     return ch;
@@ -80,6 +82,7 @@ export class SessionManager {
     const ch = this.#channel(notebook);
     const pub = (j) => j && { id: j.id, mode: j.mode, agentId: j.agentId, chapterId: j.chapterId, topicId: j.topicId, message: j.message, createdAt: j.createdAt };
     return {
+      autoApprove: ch.autoApprove,
       running: pub(ch.running),
       queue: ch.queue.map(pub),
       permissions: [...ch.permissions.entries()].map(([requestId, p]) => ({ requestId, jobId: p.jobId, toolCall: p.toolCall, options: p.options })),
@@ -90,7 +93,8 @@ export class SessionManager {
   }
 
   // ---- jobs -----------------------------------------------------------------
-  async ask(notebook, { agentId, mode = 'new-chapter', chapterId, topicId, message }) {
+  async ask(notebook, { agentId, mode = 'new-chapter', chapterId, topicId, message, autoApprove }) {
+    if (typeof autoApprove === 'boolean') this.setAutoApprove(notebook, autoApprove);
     if (!MODES[mode]) throw new Error(`Unknown mode: ${mode}`);
     if (!message?.trim()) throw new Error('message is required');
     agentId ||= (await loadSettings()).defaultAgent;
@@ -152,6 +156,22 @@ export class SessionManager {
     this.cancel(notebook);
     for (const [key, s] of this.sessions) if (s.notebook === notebook) { s.conn.kill(); this.sessions.delete(key); }
     this.emit(notebook, 'session_reset', {});
+  }
+
+  /** Viewer checkbox: auto-approve this notebook's permission requests. Turning it on approves pending ones too. */
+  setAutoApprove(notebook, on) {
+    const ch = this.#channel(notebook);
+    if (ch.autoApprove === on) return;
+    ch.autoApprove = on;
+    this.emit(notebook, 'auto_approve', { on });
+    if (!on) return;
+    for (const [requestId, p] of ch.permissions) {
+      const pick = p.mode && MODES[p.mode]?.writes ? allowOption(p.options) : null;
+      if (!pick) continue;
+      ch.permissions.delete(requestId);
+      p.resolve({ outcome: { outcome: 'selected', optionId: pick.optionId } });
+      this.emit(notebook, 'permission_resolved', { requestId, jobId: p.jobId, optionId: pick.optionId });
+    }
   }
 
   respondPermission(notebook, requestId, optionId) {
@@ -266,10 +286,11 @@ export class SessionManager {
   }
 
   async #permission(notebook, job, { toolCall, options = [] }) {
-    const { permissionMode } = await loadSettings();
     const ch = this.#channel(notebook);
-    if (permissionMode === 'auto' && job && MODES[job.mode].writes) {
-      const pick = options.find((o) => o.kind === 'allow_always') || options.find((o) => o.kind === 'allow_once');
+    // The viewer's checkbox wins; the Settings permission mode is the fallback for clients that never set it.
+    const auto = ch.autoApprove ?? (await loadSettings()).permissionMode === 'auto';
+    if (auto && job && MODES[job.mode].writes) {
+      const pick = allowOption(options);
       if (pick) {
         this.emit(notebook, 'permission_auto', { jobId: job.id, title: toolCall?.title, optionId: pick.optionId });
         return { outcome: { outcome: 'selected', optionId: pick.optionId } };
@@ -284,7 +305,7 @@ export class SessionManager {
           this.emit(notebook, 'permission_resolved', { requestId, jobId: job?.id, optionId: null });
         }
       }, PERMISSION_TIMEOUT_MS);
-      ch.permissions.set(requestId, { jobId: job?.id, toolCall: tc, options, resolve: (v) => { clearTimeout(timer); resolve(v); } });
+      ch.permissions.set(requestId, { jobId: job?.id, mode: job?.mode, toolCall: tc, options, resolve: (v) => { clearTimeout(timer); resolve(v); } });
       this.emit(notebook, 'permission_request', { requestId, jobId: job?.id, toolCall: tc, options });
     });
   }

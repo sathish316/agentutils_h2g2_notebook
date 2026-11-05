@@ -368,6 +368,9 @@ a { color: var(--accent); }
 .drawer-chat .chat-hint { font-size: 12px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer-chat .send { border: 0; background: var(--sticky-ink); color: var(--sticky); padding: 5px 14px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 13px; }
 .drawer-chat .send:disabled { opacity: .5; cursor: default; }
+.drawer-chat .chat-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.auto-approve { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; cursor: pointer; user-select: none; white-space: nowrap; }
+.auto-approve input { margin: 0; accent-color: var(--sticky-ink); cursor: pointer; }
 .drawer-empty { color: var(--ink-faint); text-align: center; padding: 40px 20px; font-size: 14px; }
 .job { border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
 .job-head { padding: 10px 12px; background: color-mix(in srgb, var(--ink) 3%, transparent); display: flex; gap: 8px; align-items: flex-start; }

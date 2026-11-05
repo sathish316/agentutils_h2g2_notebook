@@ -99,7 +99,7 @@ async function api(req, res, parts) {
   if (parts[0] === 'notebooks' && parts.length === 1 && method === 'POST') {
     const { name, title, scope, description, message, agentId } = await readBody(req);
     await createNotebook(String(name || ''), { title, scope, description });
-    const job = message?.trim() ? await sessions.ask(name, { agentId, mode: 'new-chapter', message }) : null;
+    const job = message?.trim() ? await sessions.ask(name, { agentId, mode: 'new-chapter', message, autoApprove: true }) : null;
     return json(res, 201, { name, jobId: job?.id || null });
   }
   if (parts[0] === 'notebooks' && parts.length >= 2) {
@@ -116,6 +116,11 @@ async function api(req, res, parts) {
     }
     if (action === 'cancel' && method === 'POST') { sessions.cancel(name); return json(res, 200, { ok: true }); }
     if (action === 'reset' && method === 'POST') { sessions.reset(name); return json(res, 200, { ok: true }); }
+    if (action === 'auto-approve' && method === 'POST') {
+      const { on } = await readBody(req);
+      sessions.setAutoApprove(name, !!on);
+      return json(res, 200, { ok: true, on: !!on });
+    }
     if (action === 'permission' && method === 'POST') {
       const { requestId, optionId } = await readBody(req);
       sessions.respondPermission(name, requestId, optionId || null);
