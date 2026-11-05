@@ -314,6 +314,7 @@ async function route() {
     S.scroll = built.scroll;
     renderOutline();
     renderTabs();
+    S.activity?.pageChanged();
     await turn($('.stage'), old, built.sheet, dir);
   }
   if (sub) {
@@ -383,7 +384,8 @@ async function boot() {
   applyPaper();
 
   S.activity = new Activity({
-    notebook: NAME, agents: S.agents, modes: S.modes,
+    notebook: NAME, agents: S.agents, modes: S.modes, defaultAgent: S.defaultAgent,
+    currentChapter: () => (S.pages[S.index]?.type === 'chapter' ? S.pages[S.index].chapter : null),
     onNotebookChanged,
     onFrameworkChanged: () => toast('The framework was updated', { action: 'Reload', onAction: () => location.reload(), timeout: 0 }),
     onBusy: (busy) => {

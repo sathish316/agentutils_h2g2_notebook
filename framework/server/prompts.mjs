@@ -8,6 +8,8 @@ export const MODES = {
   'edit-chapter': { label: 'Change this chapter', writes: true, needsChapter: true },
   answer: { label: 'Just answer', writes: false },
   framework: { label: 'Change the framework', writes: true, framework: true },
+  // Sent from the Agent drawer's chat box: continues the same ACP session; the agent decides answer vs. edit.
+  followup: { label: 'Follow up', writes: true, hidden: true },
 };
 
 const SCOPE_SOURCES = {
@@ -27,7 +29,8 @@ function tocText(chapters) {
   return rows.join('\n') || '(empty — this will be the first chapter)';
 }
 
-export async function buildPrompt(notebook, { mode, chapterId, topicId, message }) {
+/** warm: the ACP session already received the base instructions earlier in this conversation. */
+export async function buildPrompt(notebook, { mode, chapterId, topicId, message }, { warm = false } = {}) {
   if (!MODES[mode]) throw new Error(`Unknown mode: ${mode}`);
   if (!message?.trim()) throw new Error('message is required');
   const nb = await loadNotebookForViewer(notebook);
@@ -62,5 +65,7 @@ export async function buildPrompt(notebook, { mode, chapterId, topicId, message 
       : 'Context: the whole notebook.',
   };
   const read = (f) => fs.readFile(path.join(FRAMEWORK_DIR, 'prompts', f), 'utf8');
-  return `${render(await read('base.md'), vars)}\n${render(await read(`${mode}.md`), vars)}`;
+  const task = render(await read(`${mode}.md`), vars);
+  if (warm && mode === 'followup') return task;
+  return `${render(await read('base.md'), vars)}\n${task}`;
 }
