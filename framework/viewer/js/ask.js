@@ -20,7 +20,7 @@ export const agentPref = {
  */
 export function createComposer(opts) {
   const { notebook, chapter, topic, modes } = opts;
-  const allowed = Object.entries(modes).filter(([id, m]) => (chapter || !m.needsChapter) && (!opts.allowedModes || opts.allowedModes.includes(id)));
+  const allowed = Object.entries(modes).filter(([id, m]) => !m.hidden && (chapter || !m.needsChapter) && (!opts.allowedModes || opts.allowedModes.includes(id)));
   let mode = opts.mode && modes[opts.mode] ? opts.mode : allowed[0][0];
 
   const text = h('textarea', { placeholder: PLACEHOLDERS[mode], rows: 2 });
