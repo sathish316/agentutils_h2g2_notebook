@@ -1,7 +1,7 @@
 // Agent activity drawer: renders the ACP session event stream (messages, tool calls, plans, permissions).
 import { h, icon, toast } from './util.js';
 import { api } from './api.js';
-import { agentPref } from './ask.js';
+import { agentPref, autoApprovePref, autoApproveToggle } from './ask.js';
 import { renderMarkdown } from './render/markdown.js';
 
 const TOOL_ICONS = { read: '📖', edit: '✏️', delete: '🗑', move: '↔', search: '🔎', execute: '⌘', think: '💭', fetch: '🌐', other: '•' };
@@ -26,6 +26,7 @@ export class Activity {
     document.body.append(this.el);
     this.#empty();
     this.#updateHint();
+    api.autoApprove(notebook, autoApprovePref.get(notebook)).catch(() => {});
     this.connect();
   }
 
@@ -43,7 +44,7 @@ export class Activity {
     const text = h('textarea', { rows: 2, placeholder: 'Follow up — ask about the chapter or ask for a change…' });
     const send = h('button', { class: 'send', type: 'submit' }, 'Send');
     const hint = h('span', { class: 'chat-hint' });
-    const el = h('form', { class: 'drawer-chat' }, text, h('div', { class: 'row' }, hint, send));
+    const el = h('form', { class: 'drawer-chat' }, text, h('div', { class: 'row' }, hint, h('span', { class: 'chat-actions' }, autoApproveToggle(this.notebook), send)));
     text.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); el.requestSubmit(); }
     });
@@ -55,7 +56,7 @@ export class Activity {
       try {
         const chapter = this.currentChapter?.();
         await api.ask(this.notebook, {
-          agentId: this.#chatAgent(), mode: 'followup', message,
+          agentId: this.#chatAgent(), autoApprove: autoApprovePref.get(this.notebook), mode: 'followup', message,
           chapterId: chapter?.status === 'planned' ? this.lastJob?.chapterId : (chapter?.id || this.lastJob?.chapterId),
         });
         text.value = '';
