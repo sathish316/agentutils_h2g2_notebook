@@ -6,7 +6,7 @@ Everything an agent needs to write or change a notebook. The viewer renders thes
 
 ```
 notebooks/<name>/
-  notebook.json      { title, description, scope: "general" | "org", created, updated }
+  notebook.json      { title, description, scope: "general" | "org", created, updated, archived? }  (archived: true hides it from the library shelf)
   toc.json           { chapters: [ { id, title, file, summary?, children?: [...] } | { id, title, summary, status: "planned" } ] }
   references.json    { categories: [ { id, title, items: [ { id, title, url?, source, chapters?, note?, accessed } ] } ] }
   chapters/<id>.md   one markdown file per chapter

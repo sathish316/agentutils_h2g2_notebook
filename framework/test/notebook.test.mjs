@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { NOTEBOOKS_DIR, createNotebook, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
+import { NOTEBOOKS_DIR, createNotebook, setArchived, listNotebooks, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
 import { parseInfo } from '../viewer/js/shared/fence.js';
 
 const NAME = `zz-test-${process.pid}`;
@@ -56,4 +56,17 @@ test('planned chapters are promoted in place', async (t) => {
   assert.deepEqual(nb.toc.chapters.map((c) => [c.id, c.status || 'written']), [['one', 'written'], ['two', 'written'], ['three', 'planned']]);
   assert.equal(nb.toc.chapters[1].summary, 'later');
   assert.deepEqual((await validateNotebook(name)).errors, []);
+});
+
+test('archive and unarchive', async (t) => {
+  const name = `${NAME}-arch`;
+  t.after(() => fs.rm(path.join(NOTEBOOKS_DIR, name), { recursive: true, force: true }));
+  await createNotebook(name, { title: 'Arch', scope: 'general' });
+  const find = async () => (await listNotebooks()).find((n) => n.name === name);
+  assert.ok(!(await find()).archived);
+  await setArchived(name, true);
+  assert.equal((await find()).archived, true);
+  assert.equal((await validateNotebook(name)).errors.length, 0);
+  await setArchived(name, false);
+  assert.ok(!('archived' in (await find())));
 });

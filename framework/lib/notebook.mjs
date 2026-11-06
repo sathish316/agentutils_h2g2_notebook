@@ -104,6 +104,15 @@ export async function createNotebook(name, { title, scope = 'general', descripti
   return dir;
 }
 
+/** Archived notebooks stay on disk but are hidden from the library's main shelf. */
+export async function setArchived(name, archived) {
+  const file = path.join(notebookDir(name), 'notebook.json');
+  const meta = await readJson(file);
+  if (archived) meta.archived = true; else delete meta.archived;
+  await writeJson(file, meta);
+  return !!archived;
+}
+
 async function touch(nb) {
   nb.meta.updated = new Date().toISOString();
   const { name, ...meta } = nb.meta;

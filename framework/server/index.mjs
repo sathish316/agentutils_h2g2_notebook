@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook } from '../lib/notebook.mjs';
+import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived } from '../lib/notebook.mjs';
 import { AcpConnection } from './acp-client.mjs';
 import { SessionManager } from './sessions.mjs';
 import { MODES } from './prompts.mjs';
@@ -116,6 +116,10 @@ async function api(req, res, parts) {
     }
     if (action === 'cancel' && method === 'POST') { sessions.cancel(name); return json(res, 200, { ok: true }); }
     if (action === 'reset' && method === 'POST') { sessions.reset(name); return json(res, 200, { ok: true }); }
+    if (action === 'archive' && method === 'POST') {
+      const { archived = true } = await readBody(req);
+      return json(res, 200, { name, archived: await setArchived(name, !!archived) });
+    }
     if (action === 'auto-approve' && method === 'POST') {
       const { on } = await readBody(req);
       sessions.setAutoApprove(name, !!on);

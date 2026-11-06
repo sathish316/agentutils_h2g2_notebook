@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import {
   createNotebook, addChapter, addReference, validateNotebook, listNotebooks,
-  loadNotebookForViewer, flatten, ROOT,
+  loadNotebookForViewer, flatten, setArchived, ROOT,
 } from './lib/notebook.mjs';
 
 const HELP = `h2g2 — notebook tools
@@ -26,7 +26,9 @@ const HELP = `h2g2 — notebook tools
 
   validate <name>      Check TOC, files, citations, embeds. Exit 1 on errors.
   toc <name>           Print the TOC with topics.
-  list                 List notebooks.
+  archive <name>       Hide a notebook from the library (it stays on disk).
+  unarchive <name>     Show an archived notebook in the library again.
+  list                 List notebooks (archived ones are marked).
 
 Add --json to any command for machine-readable output.`;
 
@@ -85,9 +87,14 @@ try {
       print(`${nb.meta.title} (${nb.meta.scope})\n${lines.join('\n') || '(no chapters)'}`, nb.toc);
       break;
     }
+    case 'archive': case 'unarchive': {
+      const archived = await setArchived(need(name, '<name>'), cmd === 'archive');
+      print(`${archived ? 'archived' : 'unarchived'} ${name}`, { name, archived });
+      break;
+    }
     case 'list': {
       const all = await listNotebooks();
-      print(all.map((n) => `${n.name.padEnd(16)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}`).join('\n'), all);
+      print(all.map((n) => `${n.name.padEnd(16)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}${n.archived ? '  [archived]' : ''}` : '(not initialized)'}`).join('\n'), all);
       break;
     }
     default:
