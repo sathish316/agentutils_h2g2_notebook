@@ -9,6 +9,32 @@ function fraction(nb) {
   return Math.min(1, (p.chapters?.length || 0) / nb.chapterCount);
 }
 
+let notebooks = [];
+const view = () => (location.hash === '#archived' ? 'archived' : 'active');
+
+async function setArchived(nb, archived) {
+  try {
+    await api.archive(nb.name, archived);
+    nb.archived = archived;
+    render();
+    toast(archived ? `Archived “${nb.title}”` : `Restored “${nb.title}”`, {
+      action: 'Undo', onAction: () => setArchived(nb, !archived),
+    });
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function archiveBtn(nb) {
+  const on = !!nb.archived;
+  return h('button', {
+    class: 'cover-archive', type: 'button', title: on ? 'Unarchive (show in Notebooks)' : 'Archive (hide from Notebooks)',
+    'aria-label': on ? `Unarchive ${nb.title}` : `Archive ${nb.title}`,
+    html: icon(on ? 'unarchive' : 'archive', 16),
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); setArchived(nb, !on); },
+  });
+}
+
 function cover(nb) {
   if (!nb.initialized) {
     return h('div', {},
@@ -19,7 +45,8 @@ function cover(nb) {
   }
   const [c1, c2] = colorsFor(nb.name);
   const fr = fraction(nb);
-  return h('div', {},
+  return h('div', { class: 'cover-wrap' },
+    archiveBtn(nb),
     h('a', { class: 'cover', href: `/notebooks/${encodeURIComponent(nb.name)}/`, style: { '--c1': c1, '--c2': c2 } },
       h('span', { class: 'band' }),
       h('div', { class: 'label' }, h('div', { class: 't' }, nb.title), nb.description ? h('div', { class: 'd' }, nb.description) : null),
@@ -66,21 +93,37 @@ async function newNotebook(name = '') {
   (name ? titleIn : nameIn).focus();
 }
 
+function render() {
+  const archived = notebooks.filter((n) => n.archived);
+  const active = notebooks.filter((n) => !n.archived);
+  const v = view() === 'archived' && archived.length ? 'archived' : 'active';
+  const tab = (id, label, count) => h('a', { class: `lib-tab${v === id ? ' on' : ''}`, href: id === 'archived' ? '#archived' : '#' }, label, h('span', { class: 'n' }, String(count)));
+  $tabs.replaceChildren(tab('active', 'Notebooks', active.length), archived.length ? tab('archived', 'Archived', archived.length) : '');
+  if (v === 'archived') {
+    $shelf.replaceChildren(...archived.map(cover));
+    return;
+  }
+  $shelf.replaceChildren(...active.map(cover),
+    h('div', {}, h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook(); } }, h('div', { class: 'plus' }, '+ New notebook')), h('div', { class: 'under' }, '')));
+}
+
+const $tabs = h('nav', { class: 'lib-tabs', 'aria-label': 'Library view' });
+const $shelf = h('div', { class: 'shelf' });
+
 async function boot() {
   const bar = h('header', { class: 'toolbar' },
     h('span', { class: 'title' }, '📓 H2G2'),
     h('span', { class: 'spacer' }),
     h('button', { class: 'tbtn', onclick: () => newNotebook(), html: `${icon('plus')}<span>New notebook</span>` }),
     h('a', { class: 'tbtn', href: '/settings', title: 'Settings', html: icon('gear') }));
-  const shelf = h('div', { class: 'shelf' });
   document.body.append(bar, h('main', { class: 'library' },
     h('h1', {}, 'Library'),
     h('p', { class: 'sub' }, 'The Hitchhiker’s Guide to the Galaxy — living notebooks your agents write with you.'),
-    shelf));
+    $tabs, $shelf));
+  window.addEventListener('hashchange', render);
   try {
-    const list = await api.notebooks();
-    shelf.replaceChildren(...list.map(cover),
-      h('div', {}, h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook(); } }, h('div', { class: 'plus' }, '+ New notebook')), h('div', { class: 'under' }, '')));
+    notebooks = await api.notebooks();
+    render();
   } catch (err) {
     toast(err.message);
   }

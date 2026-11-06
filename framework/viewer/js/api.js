@@ -14,6 +14,7 @@ const nb = (name) => `/api/notebooks/${encodeURIComponent(name)}`;
 export const api = {
   notebooks: () => call('GET', '/api/notebooks'),
   createNotebook: (body) => call('POST', '/api/notebooks', body),
+  archive: (name, archived) => call('POST', `${nb(name)}/archive`, { archived }),
   notebook: (name) => call('GET', nb(name)),
   ask: (name, body) => call('POST', `${nb(name)}/ask`, body),
   cancel: (name) => call('POST', `${nb(name)}/cancel`),
