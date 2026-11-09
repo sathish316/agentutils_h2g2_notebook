@@ -458,6 +458,7 @@ a { color: var(--accent); }
 .cover .prog i { display: block; height: 100%; background: white; }
 .cover.blank { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 4%, transparent) 0 10px, transparent 10px 20px); color: var(--ink-soft); box-shadow: none; border: 2px dashed color-mix(in srgb, var(--ink) 20%, transparent); }
 .cover.blank:hover { transform: none; border-color: var(--accent); }
+.cover.blank .label { color: var(--ink-soft); }
 .cover.blank .plus { font-size: 15px; font-weight: 600; margin: auto 0 0; line-height: 1.3; }
 .lib-tabs { display: flex; gap: 6px; margin: -12px 0 26px; }
 .lib-tab { display: inline-flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 550; color: var(--ink-soft); text-decoration: none; border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
