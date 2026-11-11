@@ -34,6 +34,18 @@ async function writeJson(file, data) {
 
 export const EMPTY_TOC = { chapters: [] };
 export const ARCHIVED_MARKER = '.archived';
+export const TAGS_FILE = '.tags.json'; // tags for empty folders (no notebook.json yet)
+export const TAG_RE = /^[a-z0-9][a-z0-9._-]{0,31}$/;
+
+/** "#Foo Bar" -> "foo-bar". Returns '' when nothing usable is left. */
+export function normalizeTag(t) {
+  const s = String(t ?? '').trim().replace(/^#+/, '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '').replace(/^[._-]+/, '').slice(0, 32);
+  return TAG_RE.test(s) ? s : '';
+}
+
+export function normalizeTags(tags) {
+  return [...new Set((Array.isArray(tags) ? tags : []).map(normalizeTag).filter(Boolean))].sort();
+}
 export const EMPTY_REFS = { categories: [] };
 
 export async function isNotebook(name) {
@@ -49,11 +61,12 @@ export async function listNotebooks() {
     const meta = await readJson(path.join(dir, 'notebook.json'), null).catch(() => null);
     if (!meta) {
       const archived = fss.existsSync(path.join(dir, ARCHIVED_MARKER));
-      out.push({ name: e.name, title: e.name, initialized: false, ...(archived && { archived }) });
+      const tags = normalizeTags(await readJson(path.join(dir, TAGS_FILE), []).catch(() => []));
+      out.push({ name: e.name, title: e.name, initialized: false, tags, ...(archived && { archived }) });
       continue;
     }
     const toc = await readJson(path.join(dir, 'toc.json'), EMPTY_TOC).catch(() => EMPTY_TOC);
-    out.push({ ...meta, name: e.name, initialized: true, chapterCount: flatten(toc.chapters).length });
+    out.push({ ...meta, tags: normalizeTags(meta.tags), name: e.name, initialized: true, chapterCount: flatten(toc.chapters).length });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -100,10 +113,13 @@ export async function createNotebook(name, { title, scope = 'general', descripti
   const now = new Date().toISOString();
   const marker = path.join(dir, ARCHIVED_MARKER);
   const archived = fss.existsSync(marker);
+  const tagsFile = path.join(dir, TAGS_FILE);
+  const tags = normalizeTags(await readJson(tagsFile, []).catch(() => []));
   await writeJson(path.join(dir, 'notebook.json'), {
-    title: title || name, description, scope, created: now, updated: now, ...(archived && { archived }),
+    title: title || name, description, scope, created: now, updated: now, ...(archived && { archived }), ...(tags.length && { tags }),
   });
   await fs.rm(marker, { force: true });
+  await fs.rm(tagsFile, { force: true });
   await writeJson(path.join(dir, 'toc.json'), EMPTY_TOC);
   await writeJson(path.join(dir, 'references.json'), EMPTY_REFS);
   return dir;
@@ -126,6 +142,23 @@ export async function setArchived(name, archived) {
   if (archived) meta.archived = true; else delete meta.archived;
   await writeJson(file, meta);
   return !!archived;
+}
+
+/** Replace a notebook's tags (normalized, deduplicated, sorted). Works for empty folders too. */
+export async function setTags(name, tags) {
+  const dir = notebookDir(name);
+  const file = path.join(dir, 'notebook.json');
+  const clean = normalizeTags(tags);
+  if (!fss.existsSync(file)) {
+    if (!fss.existsSync(dir)) throw new Error(`No notebook folder "${name}"`);
+    const side = path.join(dir, TAGS_FILE);
+    if (clean.length) await writeJson(side, clean); else await fs.rm(side, { force: true });
+    return clean;
+  }
+  const meta = await readJson(file);
+  if (clean.length) meta.tags = clean; else delete meta.tags;
+  await writeJson(file, meta);
+  return clean;
 }
 
 async function touch(nb) {

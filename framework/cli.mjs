@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import {
   createNotebook, addChapter, addReference, validateNotebook, listNotebooks,
-  loadNotebookForViewer, flatten, setArchived, ROOT,
+  loadNotebookForViewer, flatten, setArchived, setTags, ROOT,
 } from './lib/notebook.mjs';
 
 const HELP = `h2g2 — notebook tools
@@ -26,6 +26,8 @@ const HELP = `h2g2 — notebook tools
 
   validate <name>      Check TOC, files, citations, embeds. Exit 1 on errors.
   toc <name>           Print the TOC with topics.
+  tag <name> <tag...>    Add tags (shown as #tag under the cover; filterable in the library).
+  untag <name> <tag...>  Remove tags.
   archive <name>       Hide a notebook from the library (it stays on disk).
   unarchive <name>     Show an archived notebook in the library again.
   list                 List notebooks (archived ones are marked).
@@ -87,6 +89,18 @@ try {
       print(`${nb.meta.title} (${nb.meta.scope})\n${lines.join('\n') || '(no chapters)'}`, nb.toc);
       break;
     }
+    case 'tag': case 'untag': {
+      need(name, '<name>');
+      const given = positionals.slice(2);
+      if (!given.length) throw new Error(`missing <tag...>\n\n${HELP}`);
+      const cur = (await listNotebooks()).find((n) => n.name === name);
+      if (!cur) throw new Error(`No notebook folder "${name}"`);
+      const drop = new Set(given.map((t) => String(t).replace(/^#+/, '').toLowerCase()));
+      const next = cmd === 'tag' ? [...cur.tags, ...given] : cur.tags.filter((t) => !drop.has(t));
+      const tags = await setTags(name, next);
+      print(tags.length ? tags.map((t) => `#${t}`).join(' ') : '(no tags)', { name, tags });
+      break;
+    }
     case 'archive': case 'unarchive': {
       const archived = await setArchived(need(name, '<name>'), cmd === 'archive');
       print(`${archived ? 'archived' : 'unarchived'} ${name}`, { name, archived });
@@ -94,7 +108,7 @@ try {
     }
     case 'list': {
       const all = await listNotebooks();
-      print(all.map((n) => `${n.name.padEnd(16)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}${n.archived ? '  [archived]' : ''}` : '(not initialized)'}`).join('\n'), all);
+      print(all.map((n) => `${n.name.padEnd(16)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}${n.archived ? '  [archived]' : ''}${n.tags.length ? `  ${n.tags.map((t) => `#${t}`).join(' ')}` : ''}`).join('\n'), all);
       break;
     }
     default:
