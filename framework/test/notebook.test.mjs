@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { NOTEBOOKS_DIR, createNotebook, setArchived, listNotebooks, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
+import { NOTEBOOKS_DIR, createNotebook, setArchived, setTags, normalizeTag, listNotebooks, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
 import { parseInfo } from '../viewer/js/shared/fence.js';
 
 const NAME = `zz-test-${process.pid}`;
@@ -87,4 +87,26 @@ test('archive an empty folder, then start it', async (t) => {
   const nb = await find();
   assert.ok(nb.initialized && nb.archived, 'stays archived once started');
   await assert.rejects(fs.access(path.join(dir, '.archived')));
+});
+
+test('tags: normalize, set, clear, and carry over from an empty folder', async (t) => {
+  assert.equal(normalizeTag('#Jira Platform'), 'jira-platform');
+  assert.equal(normalizeTag('  ##'), '');
+  const name = `${NAME}-tags`;
+  const dir = path.join(NOTEBOOKS_DIR, name);
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(dir, { recursive: true });
+  const find = async () => (await listNotebooks()).find((n) => n.name === name);
+  assert.deepEqual((await find()).tags, []);
+  assert.deepEqual(await setTags(name, ['#JDM', 'org', 'jdm', '!!']), ['jdm', 'org']);
+  assert.deepEqual((await find()).tags, ['jdm', 'org']);
+  await createNotebook(name, { title: 'Tagged', scope: 'org' });
+  assert.deepEqual((await find()).tags, ['jdm', 'org'], 'tags survive starting the notebook');
+  await assert.rejects(fs.access(path.join(dir, '.tags.json')));
+  await setTags(name, ['kafka']);
+  assert.deepEqual((await find()).tags, ['kafka']);
+  assert.equal((await validateNotebook(name)).errors.length, 0);
+  await setTags(name, []);
+  const meta = JSON.parse(await fs.readFile(path.join(dir, 'notebook.json'), 'utf8'));
+  assert.ok(!('tags' in meta));
 });
