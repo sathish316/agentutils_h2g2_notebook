@@ -10,6 +10,9 @@ function fraction(nb) {
 }
 
 let notebooks = [];
+let places = { repos: {}, notices: [] };
+const PLACE_LABEL = { local: 'Local', saved: 'Saved', shared: 'Shared' };
+const syncing = new Set();
 // Tag filter: a notebook matches when it has ANY selected tag; no selection shows everything.
 const FILTER_KEY = 'h2g2:tagFilter';
 const selected = new Set((() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || '[]'); } catch { return []; } })());
@@ -54,10 +57,87 @@ function archiveBtn(nb) {
   });
 }
 
+const badge = (nb) => h('span', { class: `place-badge ${nb.place || 'local'}`, title: `${PLACE_LABEL[nb.place || 'local']} notebook` }, PLACE_LABEL[nb.place || 'local']);
+
+function gearBtn(nb) {
+  return h('button', {
+    class: 'cover-gear', type: 'button', title: 'Notebook settings (where it lives, sync)', 'aria-label': `Settings for ${nb.title}`,
+    html: icon('gear', 16), onclick: (e) => { e.preventDefault(); e.stopPropagation(); placeDialog(nb); },
+  });
+}
+
+function syncBtn(nb) {
+  if (!nb.place || nb.place === 'local') return null;
+  const busy = syncing.has(nb.name);
+  const state = busy ? 'busy' : nb.dirty ? 'dirty' : 'clean';
+  return h('button', {
+    class: `cover-sync ${state}`, type: 'button', disabled: busy,
+    title: busy ? 'Syncing…' : nb.dirty ? `Sync: commit and push this notebook's changes to the ${nb.place} repo` : `Nothing to sync (${nb.place} repo is up to date)`,
+    'aria-label': `Sync ${nb.title}`, html: icon('sync', 16),
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); syncNow(nb); },
+  });
+}
+
+async function syncNow(nb) {
+  if (syncing.has(nb.name)) return;
+  syncing.add(nb.name);
+  render();
+  try {
+    const r = await api.sync(nb.name);
+    toast(r.status === 'nothing' ? `Nothing to sync for “${nb.title}”.` : `Committed and pushed “${nb.title}”${r.message ? `: ${r.message}` : ' (earlier commit)'}.`, { timeout: 7000 });
+  } catch (err) {
+    toast(err.message, { timeout: 15000 });
+  } finally {
+    syncing.delete(nb.name);
+    await refresh();
+  }
+}
+
+/** Gear dialog: shows where the notebook lives and moves it (Local / Saved / Shared); sync is here too. */
+function placeDialog(nb) {
+  const err = h('div', { class: 'err-text' });
+  const current = nb.place || 'local';
+  let choice = current;
+  const rows = ['local', 'saved', 'shared'].map((p) => {
+    const repo = places.repos?.[p];
+    const reason = p === 'local' ? '' : !repo?.configured ? `No ${p} repo is set. Add its git URL in Settings.` : !repo.cloned ? `The ${p} repo's local clone is missing. Save its URL in Settings again.` : '';
+    const input = h('input', { type: 'radio', name: 'place', value: p, checked: p === current, disabled: !!reason && p !== current, onchange: () => { choice = p; } });
+    return h('label', { class: `place-opt${reason ? ' off' : ''}` }, input,
+      h('span', { class: 'l' }, PLACE_LABEL[p], p === current ? h('em', {}, ' · now') : null),
+      h('span', { class: 'why' }, reason || { local: 'notebooks/ on this machine, not tracked by git', saved: 'your saved repo (private or public)', shared: 'your shared repo, for notebooks others should read' }[p]));
+  });
+  const form = h('form', { class: 'dlg', method: 'dialog' },
+    h('h2', {}, 'Notebook settings'),
+    h('p', { class: 'sub' }, nb.title),
+    h('div', { class: 'place-opts', role: 'radiogroup', 'aria-label': 'Where this notebook lives' }, rows),
+    h('p', { class: 'hint' }, 'Changing the place moves the notebook’s folder. It stays one copy; moving back to Local moves it back.'),
+    err,
+    h('div', { class: 'actions' },
+      current !== 'local' ? h('button', { class: 'pill', type: 'button', onclick: () => { dlg.close(); syncNow(nb); } }, h('span', { html: icon('sync', 14) }), 'Sync now') : null,
+      h('button', { class: 'pill', type: 'button', onclick: () => dlg.close() }, 'Close'),
+      h('button', { class: 'pill primary', type: 'submit' }, 'Move')));
+  const dlg = h('dialog', {}, form);
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (choice === current) { dlg.close(); return; }
+    try {
+      await api.setPlace(nb.name, choice);
+      dlg.close();
+      toast(`Moved “${nb.title}” to ${PLACE_LABEL[choice]}.`);
+      await refresh();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  dlg.showModal();
+}
+
 function cover(nb) {
   if (!nb.initialized) {
     return h('div', { class: 'cover-wrap' },
-      archiveBtn(nb),
+      badge(nb), syncBtn(nb), gearBtn(nb), archiveBtn(nb),
       h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook(nb.name); } },
         h('div', { class: 'label', style: { background: 'transparent', boxShadow: 'none', padding: 0 } }, h('div', { class: 't' }, nb.name)),
         h('div', { class: 'plus' }, '+ Start this notebook')),
@@ -67,7 +147,7 @@ function cover(nb) {
   const [c1, c2] = colorsFor(nb.name);
   const fr = fraction(nb);
   return h('div', { class: 'cover-wrap' },
-    archiveBtn(nb),
+    badge(nb), syncBtn(nb), gearBtn(nb), archiveBtn(nb),
     h('a', { class: 'cover', href: `/notebooks/${encodeURIComponent(nb.name)}/`, style: { '--c1': c1, '--c2': c2 } },
       h('span', { class: 'band' }),
       h('div', { class: 'label' }, h('div', { class: 't' }, nb.title), nb.description ? h('div', { class: 'd' }, nb.description) : null),
@@ -194,7 +274,17 @@ async function newNotebook(name = '') {
   (name ? titleIn : nameIn).focus();
 }
 
+async function refresh() {
+  try {
+    [notebooks, places] = await Promise.all([api.notebooks(), api.places()]);
+    render();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
 function render() {
+  $notices.replaceChildren(...(places.notices || []).map((n) => h('div', { class: 'place-notice', role: 'alert' }, n.message)));
   const archived = notebooks.filter((n) => n.archived);
   const active = notebooks.filter((n) => !n.archived);
   const v = view() === 'archived' && archived.length ? 'archived' : 'active';
@@ -229,6 +319,7 @@ function renderFilter(inView) {
     h('span', { class: 'hint' }, selected.size ? 'showing notebooks with any selected tag' : 'all notebooks'));
 }
 
+const $notices = h('div', { class: 'place-notices' });
 const $tabs = h('nav', { class: 'lib-tabs', 'aria-label': 'Library view' });
 const $filter = h('div', { class: 'tag-filter', role: 'group', 'aria-label': 'Filter by tag' });
 const $shelf = h('div', { class: 'shelf' });
@@ -242,13 +333,11 @@ async function boot() {
   document.body.append(bar, h('main', { class: 'library' },
     h('h1', {}, 'Library'),
     h('p', { class: 'sub' }, 'The Hitchhiker’s Guide to the Galaxy — living notebooks your agents write with you.'),
-    $tabs, $filter, $shelf));
+    $notices, $tabs, $filter, $shelf));
   window.addEventListener('hashchange', render);
-  try {
-    notebooks = await api.notebooks();
-    render();
-  } catch (err) {
-    toast(err.message);
-  }
+  await refresh();
+  // Sync state follows edits made elsewhere (agents, CLI): refresh when the tab regains focus and every 20 s while visible.
+  window.addEventListener('focus', refresh);
+  setInterval(() => { if (!document.hidden && notebooks.some((n) => n.place && n.place !== 'local')) refresh(); }, 20_000);
 }
 boot();
