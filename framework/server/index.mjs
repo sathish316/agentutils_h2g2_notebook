@@ -102,6 +102,13 @@ async function api(req, res, parts) {
     const job = message?.trim() ? await sessions.ask(name, { agentId, mode: 'new-chapter', message, autoApprove: true }) : null;
     return json(res, 201, { name, jobId: job?.id || null });
   }
+  if (parts[0] === 'notebooks' && parts[2] === 'archive' && method === 'POST') {
+    // Works for empty folders too (no notebook.json yet), so it runs before the isNotebook check.
+    const name = parts[1];
+    if (!NAME_RE.test(name) || !fs.existsSync(path.join(NOTEBOOKS_DIR, name))) return json(res, 404, { error: `No notebook folder "${name}"` });
+    const { archived = true } = await readBody(req);
+    return json(res, 200, { name, archived: await setArchived(name, !!archived) });
+  }
   if (parts[0] === 'notebooks' && parts.length >= 2) {
     const name = parts[1];
     if (!(await isNotebook(name))) return json(res, 404, { error: `No notebook "${name}". Create it with: node framework/cli.mjs new ${name} --title "…" --scope general|org` });
@@ -116,10 +123,6 @@ async function api(req, res, parts) {
     }
     if (action === 'cancel' && method === 'POST') { sessions.cancel(name); return json(res, 200, { ok: true }); }
     if (action === 'reset' && method === 'POST') { sessions.reset(name); return json(res, 200, { ok: true }); }
-    if (action === 'archive' && method === 'POST') {
-      const { archived = true } = await readBody(req);
-      return json(res, 200, { name, archived: await setArchived(name, !!archived) });
-    }
     if (action === 'auto-approve' && method === 'POST') {
       const { on } = await readBody(req);
       sessions.setAutoApprove(name, !!on);

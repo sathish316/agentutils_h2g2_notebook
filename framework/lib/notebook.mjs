@@ -33,6 +33,7 @@ async function writeJson(file, data) {
 }
 
 export const EMPTY_TOC = { chapters: [] };
+export const ARCHIVED_MARKER = '.archived';
 export const EMPTY_REFS = { categories: [] };
 
 export async function isNotebook(name) {
@@ -47,7 +48,8 @@ export async function listNotebooks() {
     const dir = path.join(NOTEBOOKS_DIR, e.name);
     const meta = await readJson(path.join(dir, 'notebook.json'), null).catch(() => null);
     if (!meta) {
-      out.push({ name: e.name, title: e.name, initialized: false });
+      const archived = fss.existsSync(path.join(dir, ARCHIVED_MARKER));
+      out.push({ name: e.name, title: e.name, initialized: false, ...(archived && { archived }) });
       continue;
     }
     const toc = await readJson(path.join(dir, 'toc.json'), EMPTY_TOC).catch(() => EMPTY_TOC);
@@ -96,17 +98,30 @@ export async function createNotebook(name, { title, scope = 'general', descripti
   await fs.mkdir(path.join(dir, 'chapters'), { recursive: true });
   await fs.mkdir(path.join(dir, 'assets'), { recursive: true });
   const now = new Date().toISOString();
+  const marker = path.join(dir, ARCHIVED_MARKER);
+  const archived = fss.existsSync(marker);
   await writeJson(path.join(dir, 'notebook.json'), {
-    title: title || name, description, scope, created: now, updated: now,
+    title: title || name, description, scope, created: now, updated: now, ...(archived && { archived }),
   });
+  await fs.rm(marker, { force: true });
   await writeJson(path.join(dir, 'toc.json'), EMPTY_TOC);
   await writeJson(path.join(dir, 'references.json'), EMPTY_REFS);
   return dir;
 }
 
-/** Archived notebooks stay on disk but are hidden from the library's main shelf. */
+/**
+ * Archived notebooks stay on disk but are hidden from the library's main shelf. Initialized notebooks store
+ * `archived: true` in notebook.json; empty folders (no notebook.json yet) use an `.archived` marker file.
+ */
 export async function setArchived(name, archived) {
-  const file = path.join(notebookDir(name), 'notebook.json');
+  const dir = notebookDir(name);
+  const file = path.join(dir, 'notebook.json');
+  if (!fss.existsSync(file)) {
+    if (!fss.existsSync(dir)) throw new Error(`No notebook folder "${name}"`);
+    const marker = path.join(dir, ARCHIVED_MARKER);
+    if (archived) await fs.writeFile(marker, ''); else await fs.rm(marker, { force: true });
+    return !!archived;
+  }
   const meta = await readJson(file);
   if (archived) meta.archived = true; else delete meta.archived;
   await writeJson(file, meta);

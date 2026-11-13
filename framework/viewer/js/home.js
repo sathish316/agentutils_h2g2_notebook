@@ -37,7 +37,8 @@ function archiveBtn(nb) {
 
 function cover(nb) {
   if (!nb.initialized) {
-    return h('div', {},
+    return h('div', { class: 'cover-wrap' },
+      archiveBtn(nb),
       h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook(nb.name); } },
         h('div', { class: 'label', style: { background: 'transparent', boxShadow: 'none', padding: 0 } }, h('div', { class: 't' }, nb.name)),
         h('div', { class: 'plus' }, '+ Start this notebook')),

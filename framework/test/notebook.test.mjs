@@ -70,3 +70,21 @@ test('archive and unarchive', async (t) => {
   await setArchived(name, false);
   assert.ok(!('archived' in (await find())));
 });
+
+test('archive an empty folder, then start it', async (t) => {
+  const name = `${NAME}-empty`;
+  const dir = path.join(NOTEBOOKS_DIR, name);
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(dir, { recursive: true });
+  const find = async () => (await listNotebooks()).find((n) => n.name === name);
+  assert.equal((await find()).initialized, false);
+  await setArchived(name, true);
+  assert.equal((await find()).archived, true);
+  await setArchived(name, false);
+  assert.ok(!(await find()).archived);
+  await setArchived(name, true);
+  await createNotebook(name, { title: 'Started', scope: 'general' });
+  const nb = await find();
+  assert.ok(nb.initialized && nb.archived, 'stays archived once started');
+  await assert.rejects(fs.access(path.join(dir, '.archived')));
+});
