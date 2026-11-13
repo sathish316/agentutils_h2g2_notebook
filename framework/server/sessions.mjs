@@ -10,7 +10,7 @@ import { ROOT, notebookDir, validateNotebook } from '../lib/notebook.mjs';
 import { getAgent, loadSettings } from './settings.mjs';
 
 const BACKLOG = 2000;
-const IDLE_MS = 30 * 60_000;
+const IDLE_MS = 2 * 60 * 60_000; // keep conversations alive for follow-ups
 const PERMISSION_TIMEOUT_MS = 15 * 60_000;
 
 const within = (file, dir) => {
@@ -84,7 +84,7 @@ export class SessionManager {
       queue: ch.queue.map(pub),
       permissions: [...ch.permissions.entries()].map(([requestId, p]) => ({ requestId, jobId: p.jobId, toolCall: p.toolCall, options: p.options })),
       sessions: [...this.sessions.values()].filter((s) => s.notebook === notebook).map((s) => ({
-        agentId: s.agentId, sessionId: s.sessionId, ready: !!s.sessionId, agentInfo: s.agentInfo,
+        agentId: s.agentId, sessionId: s.sessionId, ready: !!s.sessionId, agentInfo: s.agentInfo, turns: s.turns,
       })),
     };
   }
@@ -109,11 +109,12 @@ export class SessionManager {
     const job = (ch.running = ch.queue.shift());
     this.emit(notebook, 'job_started', { jobId: job.id, job: this.state(notebook).running });
     try {
-      const prompt = await buildPrompt(notebook, job);
       const sess = await this.#session(notebook, job);
       job.sessionKey = sess.key;
+      const prompt = await buildPrompt(notebook, job, { warm: sess.turns > 0 });
       if (job.cancelled) throw new AcpError('Cancelled', 'cancelled');
       const res = await sess.conn.prompt(sess.sessionId, prompt);
+      sess.turns++;
       sess.lastUsed = Date.now();
       this.emit(notebook, 'job_done', { jobId: job.id, stopReason: res?.stopReason || 'end_turn' });
       if (MODES[job.mode].writes && !MODES[job.mode].framework) {
@@ -173,7 +174,7 @@ export class SessionManager {
     const cwd = ROOT;
     // Notebook requests may only write inside their notebook; framework requests anywhere in the repo.
     const writeRoot = (j) => (j && MODES[j.mode].framework ? ROOT : notebookDir(notebook));
-    const sess = { key, notebook, agentId: agent.id, cwd, sessionId: null, lastUsed: Date.now() };
+    const sess = { key, notebook, agentId: agent.id, cwd, sessionId: null, turns: 0, lastUsed: Date.now() };
     const ch = this.#channel(notebook);
     const current = () => ch.running;
 

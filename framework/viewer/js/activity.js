@@ -1,16 +1,19 @@
 // Agent activity drawer: renders the ACP session event stream (messages, tool calls, plans, permissions).
 import { h, icon, toast } from './util.js';
 import { api } from './api.js';
+import { agentPref } from './ask.js';
 import { renderMarkdown } from './render/markdown.js';
 
 const TOOL_ICONS = { read: '📖', edit: '✏️', delete: '🗑', move: '↔', search: '🔎', execute: '⌘', think: '💭', fetch: '🌐', other: '•' };
 const STATUS_ICONS = { pending: '◌', in_progress: '◐', completed: '✓', failed: '✕' };
 
 export class Activity {
-  constructor({ notebook, agents, modes, onNotebookChanged, onFrameworkChanged, onBusy }) {
-    Object.assign(this, { notebook, agents, modes, onNotebookChanged, onFrameworkChanged, onBusy });
+  constructor({ notebook, agents, modes, defaultAgent, currentChapter, onNotebookChanged, onFrameworkChanged, onBusy }) {
+    Object.assign(this, { notebook, agents, modes, defaultAgent, currentChapter, onNotebookChanged, onFrameworkChanged, onBusy });
     this.jobs = new Map();
+    this.lastJob = null;
     this.body = h('div', { class: 'drawer-body' });
+    this.chat = this.#chatBox();
     this.cancelBtn = h('button', { class: 'tbtn', title: 'Stop the running request', onclick: () => api.cancel(notebook), html: `${icon('stop', 16)} Stop` });
     this.el = h('aside', { class: 'drawer', 'aria-label': 'Agent activity' },
       h('div', { class: 'drawer-head' },
@@ -18,19 +21,68 @@ export class Activity {
         this.cancelBtn,
         h('button', { class: 'tbtn', title: 'Start a fresh agent session (forgets conversation context)', onclick: () => this.#reset(), html: `${icon('reset', 16)} New session` }),
         h('button', { class: 'tbtn', title: 'Close', onclick: () => this.close(), html: icon('close', 18) })),
-      this.body);
+      this.body,
+      this.chat.el);
     document.body.append(this.el);
     this.#empty();
+    this.#updateHint();
     this.connect();
   }
 
-  open() { this.el.classList.add('open'); }
+  open() { this.el.classList.add('open'); this.#scrollEnd(); }
   close() { this.el.classList.remove('open'); }
   toggle() { this.el.classList.toggle('open'); }
 
   async #reset() {
     if (!confirm('Start a new agent session? Running and queued requests are cancelled and the agent forgets this conversation.')) return;
     await api.reset(this.notebook);
+  }
+
+  // Follow-up chat: continues the same ACP session (same agent as the last request) so the agent keeps context.
+  #chatBox() {
+    const text = h('textarea', { rows: 2, placeholder: 'Follow up — ask about the chapter or ask for a change…' });
+    const send = h('button', { class: 'send', type: 'submit' }, 'Send');
+    const hint = h('span', { class: 'chat-hint' });
+    const el = h('form', { class: 'drawer-chat' }, text, h('div', { class: 'row' }, hint, send));
+    text.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); el.requestSubmit(); }
+    });
+    el.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const message = text.value.trim();
+      if (!message) return text.focus();
+      send.disabled = true;
+      try {
+        const chapter = this.currentChapter?.();
+        await api.ask(this.notebook, {
+          agentId: this.#chatAgent(), mode: 'followup', message,
+          chapterId: chapter?.status === 'planned' ? this.lastJob?.chapterId : (chapter?.id || this.lastJob?.chapterId),
+        });
+        text.value = '';
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        send.disabled = false;
+        text.focus();
+      }
+    });
+    return { el, text, hint, focus: () => text.focus() };
+  }
+
+  #chatAgent() { return this.lastJob?.agentId || agentPref.get(this.notebook, this.defaultAgent); }
+
+  #updateHint() {
+    const ch = this.currentChapter?.();
+    const about = ch && ch.status !== 'planned' ? ` · about “${ch.title}”` : '';
+    this.chat.hint.textContent = `${this.#agentName(this.#chatAgent())}${this.lastJob ? ' · same session' : ''}${about}`;
+  }
+
+  /** Called by the viewer when the reader turns to another page. */
+  pageChanged() { this.#updateHint(); }
+
+  #scrollEnd(force = false) {
+    const b = this.body;
+    if (force || b.scrollHeight - b.scrollTop - b.clientHeight < 120) requestAnimationFrame(() => { b.scrollTop = b.scrollHeight; });
   }
 
   #empty() {
@@ -43,6 +95,7 @@ export class Activity {
     this.es.addEventListener('hello', () => {
       this.connectedAt = Date.now();
       this.jobs.clear();
+      this.lastJob = null;
       this.body.replaceChildren();
       this.#empty();
       this.#busy();
@@ -68,7 +121,8 @@ export class Activity {
         h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' } }, status,
           h('span', { class: 'tag' }, job ? `${this.modes[job.mode]?.label || job.mode} · ${this.#agentName(job.agentId)}` : ''))),
       body);
-    this.body.prepend(el);
+    this.body.append(el);
+    if (job) { this.lastJob = job; this.#updateHint(); }
     j = { el, status, body, tools: new Map(), msg: null, thought: null, plan: null, stderr: null, state: 'queued' };
     this.jobs.set(id, j);
     return j;
@@ -202,7 +256,10 @@ export class Activity {
       case 'job_done': {
         const cancelled = ev.stopReason === 'cancelled';
         this.#setState(j, cancelled ? 'error' : 'done', cancelled ? 'cancelled' : ev.stopReason === 'end_turn' ? 'done' : ev.stopReason);
-        if (live && !cancelled) toast('✓ The agent finished', { action: 'View', onAction: () => this.open() });
+        if (live && !cancelled) {
+          if (this.el.classList.contains('open')) this.chat.focus();
+          else toast('✓ The agent finished', { action: 'Follow up', onAction: () => { this.open(); this.chat.focus(); } });
+        }
         break;
       }
       case 'job_error':
@@ -212,15 +269,14 @@ export class Activity {
         break;
       case 'session_reset':
         for (const job of this.jobs.values()) if (job.state === 'running' || job.state === 'queued') this.#setState(job, 'error', 'cancelled');
+        this.lastJob = null;
+        this.#updateHint();
         if (live) toast('Started a new agent session');
         break;
       case 'notebook_changed': if (live) this.onNotebookChanged?.(ev.files || []); break;
       case 'framework_changed': if (live) this.onFrameworkChanged?.(); break;
       default: break;
     }
-    if (j && this.el.classList.contains('open')) {
-      const b = this.body;
-      if (b.scrollTop < 80) b.scrollTop = 0;
-    }
+    if (j && this.el.classList.contains('open')) this.#scrollEnd(ev.type === 'job_queued' && live);
   }
 }
