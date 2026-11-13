@@ -12,11 +12,11 @@ npm start              # http://127.0.0.1:4242  (PORT/HOST env vars to change)
 - **Library** `/` — notebooks as covers; "New notebook" creates one from the browser.
 - **Notebook** `/notebooks/<name>/` — paper pages with page turns, outline, read/unread checkboxes, and a sticky-note composer on every page (plus a ✎ per topic) to ask the ACP agent for: *new chapter · add topic · change this chapter · just answer · change the framework*. Agent progress streams into the **Agent** drawer; pages live-reload when files change.
 - **Settings** `/settings` — default ACP agent, per-machine command overrides, connection test, permission mode (ask / auto).
-- **CLI** (agents should use it for structure): `node framework/cli.mjs new|chapter|ref|validate|toc|list` — run with no args for help.
+- **CLI** (agents should use it for structure): `node framework/cli.mjs new|chapter|plan|ref|validate|toc|list` — run with no args for help.
 
 ## Notebook anatomy
 
-`notebooks/<name>/` contains `notebook.json` (title, description, scope `general|org`), `toc.json` (ordered chapter tree), `references.json` (categorised sources), `chapters/<id>.md`, and `assets/`. `## ` headings are **topics** (each gets a read checkbox), so make each one self-contained.
+`notebooks/<name>/` contains `notebook.json` (title, description, scope `general|org`), `toc.json` (ordered chapter tree; entries with `"status": "planned"` are the not-yet-written learning plan), `references.json` (categorised sources), `chapters/<id>.md`, and `assets/`. `## ` headings are **topics** (each gets a read checkbox), so make each one self-contained.
 
 ## Two agent roles
 
@@ -25,15 +25,23 @@ npm start              # http://127.0.0.1:4242  (PORT/HOST env vars to change)
 
 ## Creating a notebook (primary agent)
 
+**The first request produces exactly three things:**
+1. **A table of contents that is an ideal learning plan**: chapter 1 (written) followed by **planned** chapters, typically 5–10, ordered from fundamentals to advanced. Planned chapters have a title and a one-line summary but no file; the viewer shows them greyed out as "planned".
+2. **The first chapter**, answering the user's initial question.
+3. **References for that chapter only.**
+
+Do not write more than one chapter. The plan is a living proposal: at the end of each chapter the reader asks for what they want next, and agents then write a planned chapter (promoting it), or add, rename, reorder or drop planned entries to follow the reader's direction.
+
 1. Decide scope: **general** or **org**. If unclear, ask the user.
 2. `node framework/cli.mjs new <name> --title "…" --scope general|org --description "…"`
-3. Research (sources below), then `node framework/cli.mjs chapter <name> --title "…"` and write the chapter.
-4. Add each source: `node framework/cli.mjs ref <name> --category "…" --title "…" --url … --source … --chapter <id>`; cite as `[@id]`.
-5. `node framework/cli.mjs validate <name>` — fix every error. Tell the user to open `/notebooks/<name>/`.
+3. Research (sources below), then `node framework/cli.mjs chapter <name> --title "…"` and write **only** the first chapter, answering the user's initial question.
+4. Lay out the learning plan: `node framework/cli.mjs plan <name> --title "…" --summary "…"` for each planned chapter, in reading order.
+5. Add each source used by that chapter: `node framework/cli.mjs ref <name> --category "…" --title "…" --url … --source … --chapter <id>`; cite as `[@id]`.
+6. `node framework/cli.mjs validate <name>` — fix every error. Tell the user to open `/notebooks/<name>/`.
 
 ## Adding to a notebook (ACP agent)
 
-Read the current TOC, write in the requested place (don't just append), keep existing topic headings stable (they key reading progress), add references, validate, and reply with a 2–4 line summary.
+One request = one change: a single new chapter, a single topic, or one edit. Never generate several chapters in one go. If the request matches a planned chapter, write that one: `node framework/cli.mjs chapter <name> --id <planned-id>` promotes it in place. Keep the plan current: add, rename, reorder or drop **planned** entries when the reader's questions change direction, but never delete written chapters. Read the current TOC, write in the requested place (don't just append), keep existing topic headings stable (they key reading progress), add references, validate, and reply with a 2–4 line summary.
 
 ## Sources by scope
 

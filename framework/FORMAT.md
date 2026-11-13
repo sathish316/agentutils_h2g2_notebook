@@ -7,12 +7,13 @@ Everything an agent needs to write or change a notebook. The viewer renders thes
 ```
 notebooks/<name>/
   notebook.json      { title, description, scope: "general" | "org", created, updated }
-  toc.json           { chapters: [ { id, title, file, summary?, children?: [...] } ] }
+  toc.json           { chapters: [ { id, title, file, summary?, children?: [...] } | { id, title, summary, status: "planned" } ] }
   references.json    { categories: [ { id, title, items: [ { id, title, url?, source, chapters?, note?, accessed } ] } ] }
   chapters/<id>.md   one markdown file per chapter
   assets/            svg, html visualizations, data files used by chapters
 ```
 
+- **Planned chapters** (`"status": "planned"`, no `file`) are the learning plan: shown greyed out, written one at a time on request. Add with `cli.mjs plan`; write with `cli.mjs chapter <nb> --id <planned-id>` (promotes in place). Only planned entries may be freely added, renamed, reordered or dropped.
 - TOC order is reading order. `children` nests sub-chapters. Chapter ids are stable slugs; never rename an id that already exists.
 - **Topics** are the `## ` headings of a chapter. Each gets a read/unread checkbox and an "ask" button in the viewer, so make every `##` a self-contained, meaningful topic. Use `###` for sub-sections.
 - `scope` decides sources: `general` → internet; `org` → Confluence + Teamwork Graph (`twg`) first, internet for background.
@@ -21,6 +22,8 @@ notebooks/<name>/
 
 ```
 node framework/cli.mjs chapter <nb> --title "T" [--after ID | --before ID | --parent ID] [--summary "S"]
+node framework/cli.mjs plan <nb> --title "T" --summary "S" [--after ID]      # planned chapter (no file)
+node framework/cli.mjs chapter <nb> --id <planned-id>                          # write a planned chapter
 node framework/cli.mjs ref <nb> --category "Official docs" --title "T" --url U --source web --chapter ID
 node framework/cli.mjs validate <nb>        # run after every change; fix all errors
 node framework/cli.mjs toc <nb>

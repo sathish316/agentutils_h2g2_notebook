@@ -16,7 +16,8 @@ export function addCopy(container, getText) {
 export function mount(el, src, info) {
   const pre = h('pre', {}, h('code', { class: info.lang ? `language-${info.lang}` : '' }, src));
   const box = h('div', { class: 'codeblock' }, pre);
-  if (info.lang) box.append(h('span', { class: 'lang' }, info.lang));
+  const label = info.opts.title || info.lang;
+  if (label) box.append(h('span', { class: 'lang' }, label));
   addCopy(box, () => src);
   el.replaceChildren(box);
 }

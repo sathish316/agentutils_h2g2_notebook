@@ -27,6 +27,7 @@ const sketch = () => localStorage.getItem('h2g2:sketch') !== 'off';
 function buildPages() {
   const chapters = flat(S.nb.toc.chapters);
   S.chapters = chapters;
+  S.written = chapters.filter((c) => c.status !== 'planned');
   S.pages = [{ type: 'contents', id: '' }, ...chapters.map((c, i) => ({ type: 'chapter', id: c.id, chapter: c, n: i + 1 })), { type: 'references', id: 'references' }];
   S.files = new Map(chapters.map((c) => [c.file, c.id]));
   S.refIndex = new Map();
@@ -90,16 +91,17 @@ function ring(fr) {
 
 function renderOutline() {
   const el = $('.outline');
-  const fr = S.progress.overall(S.chapters);
+  const fr = S.progress.overall(S.written);
   const cur = S.pages[S.index];
   const item = (c, i) => {
     const page = S.pages.findIndex((p) => p.id === c.id);
-    const li = h('li', { class: `ol-item${cur?.id === c.id ? ' active' : ''}` },
-      h('a', { class: 'ol-row', href: `#/${c.id}` },
+    const planned = c.status === 'planned';
+    const li = h('li', { class: `ol-item${cur?.id === c.id ? ' active' : ''}${planned ? ' planned' : ''}` },
+      h('a', { class: 'ol-row', href: `#/${c.id}`, title: planned ? `Planned: ${c.summary || c.title}` : c.title },
         h('span', { class: 'ol-num' }, String(page)),
-        h('span', { class: 'ol-title', title: c.title }, c.title),
+        h('span', { class: 'ol-title' }, c.title),
         S.newIds.has(c.id) ? h('span', { class: 'ol-new' }, 'new') : null,
-        h('span', { html: ring(S.progress.chapterFraction(c)) })));
+        planned ? h('span', { class: 'tag-planned' }, 'planned') : h('span', { html: ring(S.progress.chapterFraction(c)) })));
     if (cur?.id === c.id && c.topics?.length) {
       li.append(h('ul', { class: 'ol-topics' }, c.topics.map((t) => {
         const cb = h('input', { type: 'checkbox', class: 'check', title: 'Mark as read' });
@@ -113,7 +115,7 @@ function renderOutline() {
   };
   el.replaceChildren(
     h('h2', {}, S.nb.meta.title),
-    h('div', { class: 'meta' }, `${S.chapters.length} chapter${S.chapters.length === 1 ? '' : 's'} · ${S.nb.meta.scope === 'org' ? 'org-specific' : 'general'} · ${Math.round(fr * 100)}% read`),
+    h('div', { class: 'meta' }, `${S.written.length} of ${S.chapters.length} chapter${S.chapters.length === 1 ? '' : 's'} written · ${S.nb.meta.scope === 'org' ? 'org-specific' : 'general'} · ${Math.round(fr * 100)}% read`),
     h('div', { class: 'progress' }, h('i', { style: { width: `${fr * 100}%` } })),
     h('ul', { class: 'ol-list' },
       h('li', { class: `ol-item${cur?.type === 'contents' ? ' active' : ''}` }, h('a', { class: 'ol-row', href: '#/' }, h('span', { class: 'ol-num' }, '✦'), h('span', { class: 'ol-title' }, 'Contents'))),
@@ -129,7 +131,7 @@ function renderTabs() {
   tabs.replaceChildren(
     h('button', { class: `tab${cur?.type === 'contents' ? ' active' : ''}`, style: { background: '#e8e2d4' }, title: 'Contents', onclick: () => { location.hash = '#/'; } }, '✦'),
     ...top.map((c, i) => h('button', {
-      class: `tab${curTop === c.id ? ' active' : ''}`, style: { background: TAB_COLORS[i % TAB_COLORS.length] }, title: c.title,
+      class: `tab${curTop === c.id ? ' active' : ''}${c.status === 'planned' ? ' planned' : ''}`, style: { background: TAB_COLORS[i % TAB_COLORS.length] }, title: c.title,
       onclick: () => { location.hash = `#/${c.id}`; },
     }, String(S.pages.findIndex((p) => p.id === c.id)))),
     h('button', { class: `tab${cur?.type === 'references' ? ' active' : ''}`, style: { background: '#d6dbe6' }, title: 'References', onclick: () => { location.hash = '#/references'; } }, '§'));
@@ -169,14 +171,15 @@ const escapeText = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;
 
 function contentsPage() {
   const { meta } = S.nb;
-  const fr = S.progress.overall(S.chapters);
+  const fr = S.progress.overall(S.written);
   const list = (chapters) => h('ul', { class: 'contents' }, chapters.map((c) => {
     const n = S.pages.findIndex((p) => p.id === c.id);
-    return h('li', {},
+    const planned = c.status === 'planned';
+    return h('li', { class: planned ? 'planned' : '' },
       h('a', { class: 'row', href: `#/${c.id}` },
         h('span', { class: 'n' }, String(n)),
         h('span', { class: 't' }, c.title, c.summary ? h('span', { class: 's' }, c.summary) : null),
-        h('span', { html: ring(S.progress.chapterFraction(S.chapters.find((x) => x.id === c.id))) })),
+        planned ? h('span', { class: 'tag-planned' }, 'planned') : h('span', { html: ring(S.progress.chapterFraction(S.chapters.find((x) => x.id === c.id))) })),
       c.children?.length ? list(c.children) : null);
   }));
   const content = h('div', {},
@@ -185,6 +188,9 @@ function contentsPage() {
     meta.description ? h('p', { class: 'cover-desc' }, meta.description) : null,
     h('span', { class: `scope ${meta.scope}` }, meta.scope === 'org' ? 'org-specific' : 'general'),
     S.chapters.length ? h('div', { class: 'progress', style: { maxWidth: '320px', marginTop: '18px' } }, h('i', { style: { width: `${fr * 100}%` } })) : null,
+    S.chapters.length && S.written.length < S.chapters.length
+      ? h('p', { class: 'plan-note' }, 'Greyed-out chapters are the planned learning path. They’re written one at a time when you ask, and the plan adapts to your questions.')
+      : null,
     S.chapters.length ? list(S.nb.toc.chapters) : h('div', { class: 'empty-page' },
       h('div', { class: 'big' }, 'Fresh notebook. Don’t panic.'),
       h('p', { style: { color: 'var(--ink-soft)' } }, 'Tell the agent what you want to learn and it will write the first chapter.')),
@@ -234,8 +240,24 @@ function decorateTopics(mdEl, chapter) {
   });
 }
 
+function plannedPage(page, i) {
+  const { chapter } = page;
+  const prevWritten = S.pages.slice(0, i).reverse().find((p) => p.type === 'chapter' && p.chapter.status !== 'planned');
+  return h('div', { class: 'planned-page' },
+    h('div', { class: 'page-head' }, h('span', { class: 'page-num' }, `${page.n}.`), h('span', { class: 'page-kicker' }, 'planned chapter')),
+    h('div', { class: 'md' }, h('h1', {}, chapter.title)),
+    chapter.summary ? h('p', { class: 'cover-desc' }, chapter.summary) : null,
+    h('p', { class: 'plan-note' }, 'This page is part of the learning plan but hasn’t been written yet. Ask for it below. You can also steer it: tell the agent what you want it to focus on.'),
+    h('div', { class: 'page-foot' }, h('span'), h('span', { class: 'pager' }, `page ${i} of ${S.pages.length - 1}`), pageFooter(i)),
+    composer({
+      chapter, mode: 'new-chapter', allowedModes: ['new-chapter', 'answer'], title: 'Write this chapter',
+      message: `Write the planned chapter "${chapter.title}".${prevWritten ? '' : ''}`,
+    }));
+}
+
 async function chapterPage(page, i) {
   const { chapter } = page;
+  if (chapter.status === 'planned') return plannedPage(page, i);
   const mdEl = h('div', { class: 'md' });
   const readCb = h('input', { type: 'checkbox', class: 'check' });
   readCb.checked = S.progress.isChapterRead(chapter);

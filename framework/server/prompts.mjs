@@ -20,6 +20,7 @@ const render = (tpl, vars) => tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] ?
 function tocText(chapters) {
   const rows = flatten(chapters).map((c) => {
     const pad = '  '.repeat(c.depth);
+    if (c.status === 'planned') return `${pad}- ${c.title} (\`${c.id}\`) — PLANNED, not written yet${c.summary ? `: ${c.summary}` : ''}`;
     const topics = c.topics?.length ? ` — topics: ${c.topics.map((t) => t.title).join('; ')}` : '';
     return `${pad}- ${c.title} (\`${c.id}\`, ${c.file})${topics}`;
   });
@@ -46,13 +47,16 @@ export async function buildPrompt(notebook, { mode, chapterId, topicId, message 
     today: new Date().toISOString().slice(0, 10),
     toc: tocText(nb.toc.chapters),
     request: message.trim().replace(/\n/g, '\n> '),
+    firstNote: flatten(nb.toc.chapters).length ? '' : `\n**This is the notebook's first request.** Produce exactly three things: (1) a table of contents that is an ideal learning plan, with this chapter first followed by 5–10 PLANNED chapters (\`node framework/cli.mjs plan ${notebook} --title "…" --summary "…"\`, fundamentals → advanced), (2) this first chapter, and (3) references for this chapter only. Do not write any planned chapter.\n`,
     chapterId: chapter?.id,
     chapterTitle: chapter?.title,
     chapterFile: chapter?.file,
     topicLine: topic ? `, topic **${topic.title}** (\`## ${topic.title}\`)` : '',
-    contextSuffix: chapter
-      ? ` while reading "${chapter.title}" (\`${chapter.id}\`)${topic ? `, topic "${topic.title}"` : ''}`
-      : '',
+    contextSuffix: chapter?.status === 'planned'
+      ? ` for the PLANNED chapter "${chapter.title}" (\`${chapter.id}\`${chapter.summary ? `, planned as: ${chapter.summary}` : ''}). Promote that entry instead of creating a new one: \`node framework/cli.mjs chapter ${notebook} --id ${chapter.id}\``
+      : chapter
+        ? ` while reading "${chapter.title}" (\`${chapter.id}\`)${topic ? `, topic "${topic.title}"` : ''}`
+        : '',
     contextLine: chapter
       ? `Context: the reader is on chapter "${chapter.title}" (\`${chapter.file}\`)${topic ? `, topic "${topic.title}"` : ''}. Read it first.`
       : 'Context: the whole notebook.',

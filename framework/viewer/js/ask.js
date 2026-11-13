@@ -16,14 +16,15 @@ export const agentPref = {
 };
 
 /**
- * opts: { notebook, chapter?, topic?, modes, agents, defaultAgent, mode?, title?, floating?, onSent(jobId), onClose() }
+ * opts: { notebook, chapter?, topic?, modes, agents, defaultAgent, mode?, allowedModes?, message?, title?, floating?, onSent(jobId), onClose() }
  */
 export function createComposer(opts) {
   const { notebook, chapter, topic, modes } = opts;
-  const allowed = Object.entries(modes).filter(([, m]) => chapter || !m.needsChapter);
+  const allowed = Object.entries(modes).filter(([id, m]) => (chapter || !m.needsChapter) && (!opts.allowedModes || opts.allowedModes.includes(id)));
   let mode = opts.mode && modes[opts.mode] ? opts.mode : allowed[0][0];
 
   const text = h('textarea', { placeholder: PLACEHOLDERS[mode], rows: 2 });
+  if (opts.message) text.value = opts.message;
   const modeBtns = allowed.map(([id, m]) => {
     const b = h('button', { class: `mode${id === mode ? ' on' : ''}`, type: 'button' }, m.label);
     b.addEventListener('click', () => {
