@@ -50,6 +50,28 @@ async function render(root) {
   const addCmd = h('input', { placeholder: 'command' });
   const addArgs = h('input', { placeholder: 'args' });
 
+  const repoCard = (place, title, blurb) => {
+    const st = settings.repoStatus?.[place] || {};
+    const input = h('input', { value: st.url || '', placeholder: 'git URL, e.g. git@github.com:me/notes.git or a local path', spellcheck: false, 'aria-label': `${title} git URL` });
+    const status = h('div', { class: `status${st.configured && !st.cloned ? ' bad' : ''}` },
+      !st.configured ? 'Not set. Notebooks cannot be moved here.' : st.cloned ? 'Cloned and ready.' : 'Set, but the local clone is missing. Save again to re-clone.');
+    const apply = async (url, doneMsg) => {
+      status.className = 'status';
+      status.textContent = url ? 'Cloning…' : 'Clearing…';
+      try { await api.saveSettings({ repos: { [place]: url } }); toast(doneMsg); render(root); } catch (err) { status.className = 'status bad'; status.textContent = err.message; }
+    };
+    return h('div', { class: 'repo-card' },
+      h('div', { class: 'name', style: { fontWeight: 650, marginBottom: '2px' } }, title),
+      h('p', { class: 'help', style: { margin: '0 0 10px' } }, blurb),
+      h('div', { class: 'row' }, input,
+        h('button', { class: 'pill primary', onclick: () => input.value.trim() && apply(input.value.trim(), `${title} saved and cloned`) }, 'Save'),
+        st.configured ? h('button', { class: 'pill', onclick: () => apply('', `${title} cleared`) }, 'Clear') : null),
+      status);
+  };
+  const commitAgent = h('select', { 'aria-label': 'Commit message agent', onchange: (e) => save({ commitAgent: e.target.value || null }, 'Commit message agent updated') },
+    h('option', { value: '', selected: !settings.commitAgent }, 'None (use default message)'),
+    agents.map((a) => h('option', { value: a.id, selected: settings.commitAgent === a.id }, a.name)));
+
   root.replaceChildren(
     h('section', { class: 'sheet-static' },
       h('h1', {}, 'Settings'),
@@ -67,6 +89,15 @@ async function render(root) {
               class: 'pill primary',
               onclick: () => addId.value && addCmd.value && save({ agents: { [addId.value.trim()]: { name: addName.value.trim() || addId.value.trim(), command: addCmd.value.trim(), args: splitArgs(addArgs.value) } } }, 'Agent added'),
             }, 'Add agent')))))),
+    h('section', { class: 'sheet-static' },
+      h('h2', {}, 'Saved and shared notebooks'),
+      h('p', { class: 'help' }, 'A notebook can live Local (notebooks/, untracked), Saved (your own git repo) or Shared (a second repo for notebooks others should read). Each repo is cloned into .h2g2/ on this machine and uses your existing git credentials (SSH keys or credential helper); H2G2 stores none. Change a notebook’s place from the gear on its cover in the library.'),
+      repoCard('saved', 'Saved repo', 'Private or public. Sync commits “Saved notes updates” unless a commit message agent is chosen below.'),
+      repoCard('shared', 'Shared repo', 'For notebooks others should read. Sync commits “Shared notes updates” by default.'),
+      h('div', { class: 'repo-card' },
+        h('div', { class: 'name', style: { fontWeight: 650, marginBottom: '2px' } }, 'Commit message agent'),
+        h('p', { class: 'help', style: { margin: '0 0 10px' } }, 'Sync gives this agent the notebook’s diff and asks for a short message. If it is not set, fails or times out, the default message is used and the commit still happens.'),
+        h('div', { class: 'row' }, commitAgent))),
     h('section', { class: 'sheet-static' },
       h('h2', {}, 'Permissions'),
       h('p', { class: 'help' }, 'When an agent asks to edit files or run commands: “Ask” shows approve/deny buttons in the activity drawer; “Auto” approves automatically for requests that are allowed to write (never for “Just answer”).'),
