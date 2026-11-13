@@ -18,6 +18,7 @@ export const api = {
   ask: (name, body) => call('POST', `${nb(name)}/ask`, body),
   cancel: (name) => call('POST', `${nb(name)}/cancel`),
   reset: (name) => call('POST', `${nb(name)}/reset`),
+  autoApprove: (name, on) => call('POST', `${nb(name)}/auto-approve`, { on }),
   permission: (name, requestId, optionId) => call('POST', `${nb(name)}/permission`, { requestId, optionId }),
   agents: () => call('GET', '/api/agents'),
   testAgent: (id) => call('POST', `/api/agents/${encodeURIComponent(id)}/test`),

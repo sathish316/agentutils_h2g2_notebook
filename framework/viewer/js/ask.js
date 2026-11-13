@@ -15,6 +15,24 @@ export const agentPref = {
   set: (nb, id) => localStorage.setItem(`h2g2:agent:${nb}`, id),
 };
 
+// Auto-approve permission requests for this notebook (default on). Shared by every composer and the drawer chat.
+export const autoApprovePref = {
+  get: (nb) => localStorage.getItem(`h2g2:auto:${nb}`) !== 'off',
+  set(nb, on) {
+    localStorage.setItem(`h2g2:auto:${nb}`, on ? 'on' : 'off');
+    window.dispatchEvent(new CustomEvent('h2g2:auto', { detail: { nb, on } }));
+    return api.autoApprove(nb, on).catch(() => {});
+  },
+};
+
+/** Checkbox kept in sync across every composer on the page. */
+export function autoApproveToggle(notebook) {
+  const cb = h('input', { type: 'checkbox', checked: autoApprovePref.get(notebook) });
+  cb.addEventListener('change', () => autoApprovePref.set(notebook, cb.checked));
+  window.addEventListener('h2g2:auto', (e) => { if (e.detail.nb === notebook) cb.checked = e.detail.on; });
+  return h('label', { class: 'auto-approve', title: 'Auto-approve the agent’s permission requests (file edits, commands) while it writes. Uncheck to be asked each time.' }, cb, 'Auto-approve');
+}
+
 /**
  * opts: { notebook, chapter?, topic?, modes, agents, defaultAgent, mode?, allowedModes?, message?, title?, floating?, onSent(jobId), onClose() }
  */
@@ -51,7 +69,7 @@ export function createComposer(opts) {
     text,
     h('div', { class: 'row' },
       h('span', { class: 'ctx' }, ctx),
-      h('span', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, agentSel, send)));
+      h('span', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, autoApproveToggle(notebook), agentSel, send)));
   if (opts.floating) {
     form.append(h('button', { class: 'close', type: 'button', title: 'Close', onclick: () => opts.onClose?.(), html: icon('close', 16) }));
   }
@@ -66,7 +84,7 @@ export function createComposer(opts) {
     if (!message) return text.focus();
     send.disabled = true;
     try {
-      const { jobId } = await api.ask(notebook, { agentId: agentSel.value, mode, chapterId: chapter?.id, topicId: topic?.id, message });
+      const { jobId } = await api.ask(notebook, { agentId: agentSel.value, autoApprove: autoApprovePref.get(notebook), mode, chapterId: chapter?.id, topicId: topic?.id, message });
       text.value = '';
       send.textContent = 'Sent ✓';
       setTimeout(() => { send.textContent = 'Send →'; }, 1800);
