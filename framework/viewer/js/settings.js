@@ -1,0 +1,84 @@
+// Settings: choose the default ACP agent, edit agent commands, test connections, permission mode.
+import { api } from './api.js';
+import { h, icon, toast } from './util.js';
+
+const splitArgs = (s) => (s.match(/"[^"]*"|'[^']*'|\S+/g) || []).map((a) => a.replace(/^["']|["']$/g, ''));
+const joinArgs = (a = []) => a.map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(' ');
+
+async function render(root) {
+  const [{ agents }, settings] = await Promise.all([api.agents(), api.settings()]);
+  const save = async (patch, msg = 'Saved') => {
+    try { await api.saveSettings(patch); toast(msg); render(root); } catch (err) { toast(err.message); }
+  };
+
+  const card = (a) => {
+    const cmd = h('input', { value: a.command });
+    const args = h('input', { value: joinArgs(a.args) });
+    const env = h('input', { value: Object.entries(a.env || {}).map(([k, v]) => `${k}=${v}`).join(' '), placeholder: 'KEY=value …' });
+    const result = h('div', { class: 'result' });
+    const editor = h('div', { class: 'edit hidden' },
+      h('label', { class: 'field' }, 'Command', cmd),
+      h('label', { class: 'field' }, 'Arguments', args),
+      h('label', { class: 'field full' }, 'Environment', env),
+      h('div', { class: 'full', style: { display: 'flex', gap: '8px' } },
+        h('button', { class: 'pill primary', onclick: () => save({ agents: { [a.id]: { command: cmd.value.trim(), args: splitArgs(args.value), env: Object.fromEntries(splitArgs(env.value).map((kv) => kv.split(/=(.*)/s).slice(0, 2))), name: a.builtin ? undefined : a.name } } }) }, 'Save'),
+        a.overridden || !a.builtin ? h('button', { class: 'pill', onclick: () => save({ agents: { [a.id]: null } }, a.builtin ? 'Reset to default' : 'Removed') }, a.builtin ? 'Reset to default' : 'Remove') : null));
+    const test = async () => {
+      result.textContent = 'Starting agent and opening a session…';
+      try {
+        const r = await api.testAgent(a.id);
+        result.textContent = r.ok
+          ? `✓ ACP v${r.protocolVersion} · ${r.agentInfo ? `${r.agentInfo.title || r.agentInfo.name} ${r.agentInfo.version || ''}` : 'agent'} · session opened in ${r.ms} ms`
+          : `✕ ${r.error || r.sessionError}${r.hint ? `\n${r.hint}` : ''}${r.authMethods?.length ? `\nAuth methods: ${r.authMethods.join(', ')}` : ''}`;
+      } catch (err) { result.textContent = `✕ ${err.message}`; }
+    };
+    return h('div', { class: `agent-card${settings.defaultAgent === a.id ? ' default' : ''}` },
+      h('div', { class: 'top' },
+        h('span', { class: `dot ${a.available ? 'ok' : 'bad'}`, title: a.available ? a.path : 'command not found on PATH' }),
+        h('span', { class: 'name' }, a.name, a.overridden ? h('span', { style: { fontWeight: 400, color: 'var(--ink-faint)', fontSize: '12px' } }, '  (customized)') : null),
+        settings.defaultAgent === a.id
+          ? h('span', { class: 'scope' }, 'default')
+          : h('button', { class: 'pill', onclick: () => save({ defaultAgent: a.id }, `${a.name} is now the default`) }, 'Make default'),
+        h('button', { class: 'pill', onclick: test }, 'Test'),
+        h('button', { class: 'pill', onclick: () => editor.classList.toggle('hidden'), html: icon('pen', 14) })),
+      h('div', { class: 'cmd' }, `${a.command} ${joinArgs(a.args)}`),
+      result, editor);
+  };
+
+  const addId = h('input', { placeholder: 'id, e.g. my-agent' });
+  const addName = h('input', { placeholder: 'Display name' });
+  const addCmd = h('input', { placeholder: 'command' });
+  const addArgs = h('input', { placeholder: 'args' });
+
+  root.replaceChildren(
+    h('section', { class: 'sheet-static' },
+      h('h1', {}, 'Settings'),
+      h('p', { class: 'help' }, 'Notebook viewers talk to ACP agents through this server. The agent starts in the repo root, reads AGENTS.md, and is told which notebook to update. Each notebook remembers the agent you pick in its composer; new notebooks use the default.')),
+    h('section', { class: 'sheet-static' },
+      h('h2', {}, 'Agents'),
+      h('p', { class: 'help' }, 'Green dot = command found on PATH. “Test” starts the agent, performs the ACP handshake and opens a session.'),
+      agents.map(card),
+      h('details', {}, h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Add a custom ACP agent'),
+        h('div', { class: 'agent-card', style: { marginTop: '10px' } },
+          h('div', { class: 'edit' },
+            h('label', { class: 'field' }, 'Id', addId), h('label', { class: 'field' }, 'Name', addName),
+            h('label', { class: 'field' }, 'Command', addCmd), h('label', { class: 'field' }, 'Arguments', addArgs),
+            h('div', { class: 'full' }, h('button', {
+              class: 'pill primary',
+              onclick: () => addId.value && addCmd.value && save({ agents: { [addId.value.trim()]: { name: addName.value.trim() || addId.value.trim(), command: addCmd.value.trim(), args: splitArgs(addArgs.value) } } }, 'Agent added'),
+            }, 'Add agent')))))),
+    h('section', { class: 'sheet-static' },
+      h('h2', {}, 'Permissions'),
+      h('p', { class: 'help' }, 'When an agent asks to edit files or run commands: “Ask” shows approve/deny buttons in the activity drawer; “Auto” approves automatically for requests that are allowed to write (never for “Just answer”).'),
+      h('div', { class: 'seg' }, settings.permissionModes.map((m) => h('button', {
+        class: settings.permissionMode === m ? 'on' : '', onclick: () => save({ permissionMode: m }),
+      }, m === 'ask' ? 'Ask me' : 'Auto-approve')))));
+}
+
+const root = h('main', { class: 'settings' });
+document.body.append(
+  h('header', { class: 'toolbar' },
+    h('a', { class: 'tbtn', href: '/', html: `${icon('shelf')}<span>Library</span>` }),
+    h('span', { class: 'spacer' })),
+  root);
+render(root).catch((err) => toast(err.message));
