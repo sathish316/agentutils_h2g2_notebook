@@ -1,15 +1,18 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { ROOT, FRAMEWORK_DIR } from '../lib/notebook.mjs';
+import { FRAMEWORK_DIR, SETTINGS_FILE as LOCAL } from '../lib/paths.mjs';
+import { applyRepo, REPO_PLACES } from '../lib/places.mjs';
 
-const LOCAL = path.join(ROOT, '.h2g2', 'settings.json');
-const DEFAULTS = { defaultAgent: 'rovo', permissionMode: 'ask', agents: {} };
+// repos: git URLs of the saved and shared notebook repos ('' = not set). commitAgent: ACP agent id that writes sync
+// commit messages, or null for the default message.
+const DEFAULTS = { defaultAgent: 'rovo', permissionMode: 'ask', agents: {}, repos: { saved: '', shared: '' }, commitAgent: null };
 export const PERMISSION_MODES = ['ask', 'auto'];
 
 export async function loadSettings() {
   const raw = await fs.readFile(LOCAL, 'utf8').catch(() => '{}');
-  return { ...DEFAULTS, ...JSON.parse(raw) };
+  const loaded = JSON.parse(raw);
+  return { ...DEFAULTS, ...loaded, repos: { ...DEFAULTS.repos, ...loaded.repos } };
 }
 
 export async function saveSettings(patch) {
@@ -32,8 +35,28 @@ export async function saveSettings(patch) {
       };
     }
   }
+  if (patch.commitAgent !== undefined) {
+    next.commitAgent = patch.commitAgent ? String(patch.commitAgent) : null;
+    if (next.commitAgent) await getAgent(next.commitAgent); // unknown agent id -> error, nothing saved
+  }
+  let failure = null;
+  if (patch.repos) {
+    next.repos = { ...cur.repos };
+    for (const place of REPO_PLACES) {
+      if (patch.repos[place] === undefined) continue;
+      try {
+        const url = String(patch.repos[place] ?? '').trim();
+        await applyRepo(place, url, cur.repos[place]); // clones; a bad URL throws and the previous setting is kept
+        next.repos[place] = url;
+      } catch (err) {
+        failure = err;
+        break;
+      }
+    }
+  }
   await fs.mkdir(path.dirname(LOCAL), { recursive: true });
   await fs.writeFile(LOCAL, JSON.stringify(next, null, 2) + '\n');
+  if (failure) throw failure;
   return next;
 }
 

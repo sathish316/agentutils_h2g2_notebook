@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { FRAMEWORK_DIR, ROOT, flatten, loadNotebookForViewer } from '../lib/notebook.mjs';
+import { FRAMEWORK_DIR, ROOT, flatten, loadNotebookForViewer, notebookDir } from '../lib/notebook.mjs';
 
 export const MODES = {
   'new-chapter': { label: 'New chapter', writes: true },
@@ -44,7 +44,8 @@ export async function buildPrompt(notebook, { mode, chapterId, topicId, message 
     description: nb.meta.description || '(none)',
     scope: nb.meta.scope,
     scopeSources: SCOPE_SOURCES[nb.meta.scope] || SCOPE_SOURCES.general,
-    notebookDir: path.join(ROOT, 'notebooks', notebook),
+    notebookDir: notebookDir(notebook),
+    notebookRel: path.relative(ROOT, notebookDir(notebook)) || '.',
     root: ROOT,
     formatDoc: path.join(FRAMEWORK_DIR, 'FORMAT.md'),
     today: new Date().toISOString().slice(0, 10),
