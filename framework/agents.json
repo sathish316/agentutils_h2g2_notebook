@@ -1,0 +1,10 @@
+{
+  "$comment": "ACP agents the notebook viewer can drive. Override command/args/env per machine from the Settings page (stored in .h2g2/settings.json).",
+  "agents": [
+    { "id": "rovo",   "name": "Rovo",        "command": "rovo",  "args": ["acp"], "loginHint": "rovo auth login" },
+    { "id": "codex",  "name": "Codex",       "command": "npx",   "args": ["-y", "@zed-industries/codex-acp"], "loginHint": "codex login" },
+    { "id": "pi",     "name": "Pi",          "command": "npx",   "args": ["-y", "pi-acp"], "loginHint": "run `pi` once to configure a provider" },
+    { "id": "fx",     "name": "Fx",          "command": "fx",    "args": ["acp"], "loginHint": "fx login" },
+    { "id": "claude", "name": "Claude Code", "command": "npx",   "args": ["-y", "@agentclientprotocol/claude-agent-acp"], "loginHint": "claude /login" }
+  ]
+}
