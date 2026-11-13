@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "skills": {
+    "verify-spec-from-interview": {
+      "source": "sathish316/skills",
+      "sourceType": "github",
+      "skillPath": "skills/verify-spec-from-interview/SKILL.md",
+      "computedHash": "0da1626b92dbae4b21135179ea8cf51585dadd412bea8c1a3af8e43cab2bd834"
+    },
+    "write-spec-with-interview": {
+      "source": "sathish316/skills",
+      "sourceType": "github",
+      "skillPath": "skills/write-spec-with-interview/SKILL.md",
+      "computedHash": "894c351881a3578a08823480ca1ea2f9cbe043183639d06631fe318abb83167c"
+    }
+  }
+}
