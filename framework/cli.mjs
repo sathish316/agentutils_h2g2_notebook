@@ -3,6 +3,8 @@
 // Run from anywhere: node <repo>/framework/cli.mjs <command> ...
 import { parseArgs } from 'node:util';
 import path from 'node:path';
+import { movePlace } from './lib/places.mjs';
+import { locate } from './lib/paths.mjs';
 import {
   createNotebook, addChapter, addReference, validateNotebook, listNotebooks,
   loadNotebookForViewer, flatten, setArchived, setTags, ROOT,
@@ -30,7 +32,10 @@ const HELP = `h2g2 — notebook tools
   untag <name> <tag...>  Remove tags.
   archive <name>       Hide a notebook from the library (it stays on disk).
   unarchive <name>     Show an archived notebook in the library again.
-  list                 List notebooks (archived ones are marked).
+  place <name> [local|saved|shared]
+      Show where a notebook lives, or move its folder there: local = notebooks/, saved / shared = the clone of the
+      repo set in Settings (.h2g2/saved, .h2g2/shared). Refused if that repo is not configured or the name is taken.
+  list                 List notebooks with their place (local, saved or shared); archived ones are marked.
 
 Add --json to any command for machine-readable output.`;
 
@@ -106,9 +111,19 @@ try {
       print(`${archived ? 'archived' : 'unarchived'} ${name}`, { name, archived });
       break;
     }
+    case 'place': {
+      need(name, '<name>');
+      const target = positionals[2];
+      const here = locate(name);
+      if (!here) throw new Error(`No notebook folder "${name}"`);
+      if (!target) { print(here.place, { name, place: here.place }); break; }
+      const r = await movePlace(name, target);
+      print(r.changed ? `moved ${name}: ${r.from} -> ${r.place}` : `${name} is already ${r.place}`, r);
+      break;
+    }
     case 'list': {
       const all = await listNotebooks();
-      print(all.map((n) => `${n.name.padEnd(16)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}${n.archived ? '  [archived]' : ''}${n.tags.length ? `  ${n.tags.map((t) => `#${t}`).join(' ')}` : ''}`).join('\n'), all);
+      print(all.map((n) => `${n.name.padEnd(16)} ${n.place.padEnd(7)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}${n.archived ? '  [archived]' : ''}${n.tags.length ? `  ${n.tags.map((t) => `#${t}`).join(' ')}` : ''}`).join('\n'), all);
       break;
     }
     default:
