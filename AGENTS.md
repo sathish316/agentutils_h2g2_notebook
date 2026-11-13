@@ -1,49 +1,54 @@
 # AGENTS.md
 
-H2G2 (Hitchhiker's Guide to the Galaxy) builds **dynamic notebooks**: structured, evolving learning guides on any topic. See `README.md` for the full vision.
+H2G2 (Hitchhiker's Guide to the Galaxy) builds **dynamic notebooks**: structured, evolving learning guides on any topic. See `README.md` for the vision and `framework/FORMAT.md` for the exact file format and rendering primitives.
+
+## Using the framework
+
+```bash
+npm install            # once
+npm start              # http://127.0.0.1:4242  (PORT/HOST env vars to change)
+```
+
+- **Library** `/` — notebooks as covers; "New notebook" creates one from the browser.
+- **Notebook** `/notebooks/<name>/` — paper pages with page turns, outline, read/unread checkboxes, and a sticky-note composer on every page (plus a ✎ per topic) to ask the ACP agent for: *new chapter · add topic · change this chapter · just answer · change the framework*. Agent progress streams into the **Agent** drawer; pages live-reload when files change.
+- **Settings** `/settings` — default ACP agent, per-machine command overrides, connection test, permission mode (ask / auto).
+- **CLI** (agents should use it for structure): `node framework/cli.mjs new|chapter|ref|validate|toc|list` — run with no args for help.
 
 ## Notebook anatomy
 
-Each notebook lives in `notebooks/{name}/` and is served at `http://host:port/notebooks/{name}/index.html`. It has:
-
-1. **Table of contents** – living outline; update it whenever a chapter is added or moved.
-2. **Chapters** – notes, visuals (mermaid, SVG, HTML visualizations), hands-on explorations, deep dives.
-3. **References** – sources used, grouped into reference categories.
-4. **Scope metadata** – `general` or `org-specific`; persisted so ACP agents generating later chapters inherit it.
-
-The viewer provides per-topic read/unread checkboxes (browser storage) and a per-chapter question box that triggers new chapters.
+`notebooks/<name>/` contains `notebook.json` (title, description, scope `general|org`), `toc.json` (ordered chapter tree), `references.json` (categorised sources), `chapters/<id>.md`, and `assets/`. `## ` headings are **topics** (each gets a read checkbox), so make each one self-contained.
 
 ## Two agent roles
 
-- **Primary agent** (you, opened in this repo): creates a notebook and its first chapter from the user's initial questions. Determines scope and records it for subsequent agents.
-- **ACP agent** (Rovo, Alta, Codex, Pi, Fx, … chosen in the notebook settings page): runs in the notebook's directory, receives a base prompt + the user's follow-up question, and adds the next chapter.
+- **Primary agent** (opened in this repo by the user): creates a notebook and its first chapter.
+- **ACP agent** (Rovo, Codex, Pi, Fx, Claude… picked in the viewer): started by the server **in the repo root**, so it reads this file. Every request names the target notebook — only modify `notebooks/<that-name>/` unless the request is a framework change.
 
 ## Creating a notebook (primary agent)
 
-1. Pick a short notebook name; create `notebooks/{name}/` if missing.
-2. Decide scope: **general** or **org-specific**. If unclear, ask the user.
-3. Research using the sources for that scope (below).
-4. Write chapter 1 answering the user's initial questions.
-5. Create the table of contents, references, and scope metadata.
+1. Decide scope: **general** or **org**. If unclear, ask the user.
+2. `node framework/cli.mjs new <name> --title "…" --scope general|org --description "…"`
+3. Research (sources below), then `node framework/cli.mjs chapter <name> --title "…"` and write the chapter.
+4. Add each source: `node framework/cli.mjs ref <name> --category "…" --title "…" --url … --source … --chapter <id>`; cite as `[@id]`.
+5. `node framework/cli.mjs validate <name>` — fix every error. Tell the user to open `/notebooks/<name>/`.
 
-## Adding a chapter (ACP agent)
+## Adding to a notebook (ACP agent)
 
-1. Read the existing TOC, references, and scope metadata.
-2. Write the chapter answering the user's question.
-3. Insert it at the right place in the TOC (not just appended).
-4. Add the sources used to the references under the appropriate category.
+Read the current TOC, write in the requested place (don't just append), keep existing topic headings stable (they key reading progress), add references, validate, and reply with a 2–4 line summary.
 
 ## Sources by scope
 
 | Scope | Sources |
 |---|---|
 | General | Internet |
-| Org-specific | Confluence, Teamwork Graph CLI (`twg`), plus internet for background |
+| Org | Confluence and Teamwork Graph CLI (`twg`) first; internet for public background |
 
 ## Chapter guidelines
 
-- Prefer diagrams (mermaid/SVG/HTML) where they clarify structure or flow.
-- Include hands-on examples or explorations where the topic allows.
-- Cite every non-obvious claim; every source must appear in references.
-- Never invent org-specific facts. If a source can't be found, say so.
-- Keep chapters focused; split large topics into multiple chapters.
+- Use the primitives in `framework/FORMAT.md`: mermaid / svg (zoomable), `viz` HTML (sandboxed), runnable `python`/`sql`/`js` blocks, callouts, sortable tables, citations.
+- Explain → visualise → let the reader explore. End with "Key takeaways".
+- Cite every non-obvious claim. Never invent org-specific facts; if a source can't be found, say so.
+- Keep chapters focused (5–15 min read); split large topics.
+
+## Changing the framework
+
+Viewer: `framework/viewer/` (no build step, ES modules; new primitives in `js/primitives/`, registered in `primitives/index.js`). Server: `framework/server/` (ACP client, session manager). Prompts: `framework/prompts/`. Document any new primitive in `framework/FORMAT.md`. Run `npm test` after lib/server changes.
