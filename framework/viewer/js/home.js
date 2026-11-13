@@ -57,7 +57,9 @@ function archiveBtn(nb) {
   });
 }
 
-const badge = (nb) => h('span', { class: `place-badge ${nb.place || 'local'}`, title: `${PLACE_LABEL[nb.place || 'local']} notebook` }, PLACE_LABEL[nb.place || 'local']);
+// Local is the default place, so only Saved and Shared covers get a badge.
+const badge = (nb) => (!nb.place || nb.place === 'local' ? null
+  : h('span', { class: `place-badge ${nb.place}`, title: `${PLACE_LABEL[nb.place]} notebook` }, PLACE_LABEL[nb.place]));
 
 function gearBtn(nb) {
   return h('button', {
