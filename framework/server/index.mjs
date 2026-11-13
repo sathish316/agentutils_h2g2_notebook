@@ -3,7 +3,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags } from '../lib/notebook.mjs';
+import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags, notebookDir } from '../lib/notebook.mjs';
+import { H2G2_DIR, REPO_PLACES, locate } from '../lib/paths.mjs';
+import { movePlace, syncNotebook, repoStatus, placeNotices, DEFAULT_MESSAGES } from '../lib/places.mjs';
+import { agentCommitMessage } from './commit-message.mjs';
 import { AcpConnection } from './acp-client.mjs';
 import { SessionManager } from './sessions.mjs';
 import { MODES } from './prompts.mjs';
@@ -69,24 +72,35 @@ function sse(req, res, notebook) {
 }
 
 // Notify browsers when notebook or viewer files change (agents write files; viewers live-refresh).
-function watch() {
-  const timers = new Map();
-  const debounce = (key, fn) => { clearTimeout(timers.get(key)); timers.set(key, setTimeout(fn, 250)); };
-  const pending = new Map();
-  try {
-    fs.watch(NOTEBOOKS_DIR, { recursive: true }, (_e, file) => {
-      if (!file) return;
-      const [nb, ...rest] = file.split(path.sep);
-      if (!NAME_RE.test(nb) || rest.some((p) => p.startsWith('.'))) return;
-      const files = pending.get(nb) || new Set();
-      files.add(rest.join('/'));
-      pending.set(nb, files);
-      debounce(nb, () => {
-        sessions.emit(nb, 'notebook_changed', { files: [...(pending.get(nb) || [])] });
-        pending.delete(nb);
-      });
+// Notebooks may live in notebooks/ or in a saved/shared repo clone; clones are re-watched after settings change.
+const watchers = new Map();
+const timers = new Map();
+const pending = new Map();
+const debounce = (key, fn) => { clearTimeout(timers.get(key)); timers.set(key, setTimeout(fn, 250)); };
+
+function watchNotebookRoot(dir) {
+  watchers.get(dir)?.close();
+  watchers.delete(dir);
+  if (!fs.existsSync(dir)) return;
+  watchers.set(dir, fs.watch(dir, { recursive: true }, (_e, file) => {
+    if (!file) return;
+    const [nb, ...rest] = file.split(path.sep);
+    if (!NAME_RE.test(nb) || rest.some((p) => p.startsWith('.'))) return;
+    const files = pending.get(nb) || new Set();
+    files.add(rest.join('/'));
+    pending.set(nb, files);
+    debounce(nb, () => {
+      sessions.emit(nb, 'notebook_changed', { files: [...(pending.get(nb) || [])] });
+      pending.delete(nb);
     });
-    fs.watch(VIEWER, { recursive: true }, () => debounce('__viewer', () => sessions.emitAll('framework_changed')));
+  }));
+}
+
+function watch() {
+  try {
+    watchNotebookRoot(NOTEBOOKS_DIR);
+    for (const place of REPO_PLACES) watchNotebookRoot(path.join(H2G2_DIR, place));
+    if (!watchers.has(VIEWER)) watchers.set(VIEWER, fs.watch(VIEWER, { recursive: true }, () => debounce('__viewer', () => sessions.emitAll('framework_changed'))));
   } catch (err) {
     console.warn(`File watching unavailable (${err.message}); viewers won't live-refresh.`);
   }
@@ -95,7 +109,10 @@ function watch() {
 async function api(req, res, parts) {
   const method = req.method;
   // /api/notebooks
-  if (parts[0] === 'notebooks' && parts.length === 1 && method === 'GET') return json(res, 200, await listNotebooks());
+  if (parts[0] === 'notebooks' && parts.length === 1 && method === 'GET') return json(res, 200, await listNotebooks({ sync: true }));
+  if (parts[0] === 'places' && parts.length === 1 && method === 'GET') {
+    return json(res, 200, { repos: await repoStatus(), notices: await placeNotices(), defaultMessages: DEFAULT_MESSAGES });
+  }
   if (parts[0] === 'notebooks' && parts.length === 1 && method === 'POST') {
     const { name, title, scope, description, message, agentId } = await readBody(req);
     await createNotebook(String(name || ''), { title, scope, description });
@@ -105,16 +122,27 @@ async function api(req, res, parts) {
   if (parts[0] === 'notebooks' && parts[2] === 'archive' && method === 'POST') {
     // Works for empty folders too (no notebook.json yet), so it runs before the isNotebook check.
     const name = parts[1];
-    if (!NAME_RE.test(name) || !fs.existsSync(path.join(NOTEBOOKS_DIR, name))) return json(res, 404, { error: `No notebook folder "${name}"` });
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
     const { archived = true } = await readBody(req);
     return json(res, 200, { name, archived: await setArchived(name, !!archived) });
   }
   if (parts[0] === 'notebooks' && parts[2] === 'tags' && method === 'PUT') {
     const name = parts[1];
-    if (!NAME_RE.test(name) || !fs.existsSync(path.join(NOTEBOOKS_DIR, name))) return json(res, 404, { error: `No notebook folder "${name}"` });
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
     const { tags } = await readBody(req);
     if (!Array.isArray(tags)) return json(res, 400, { error: 'tags must be an array of strings' });
     return json(res, 200, { name, tags: await setTags(name, tags) });
+  }
+  if (parts[0] === 'notebooks' && parts[2] === 'place' && method === 'PUT') {
+    const name = parts[1];
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
+    const { place } = await readBody(req);
+    return json(res, 200, await movePlace(name, String(place), { isBusy: (n) => sessions.isBusy(n) }));
+  }
+  if (parts[0] === 'notebooks' && parts[2] === 'sync' && method === 'POST') {
+    const name = parts[1];
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
+    return json(res, 200, await syncNotebook(name, { messageFor: (ctx) => agentCommitMessage(ctx) }));
   }
   if (parts[0] === 'notebooks' && parts.length >= 2) {
     const name = parts[1];
@@ -148,8 +176,12 @@ async function api(req, res, parts) {
     return json(res, 200, { agents: agents.map((a, i) => ({ ...a, ...checks[i] })) });
   }
   if (parts[0] === 'modes' && method === 'GET') return json(res, 200, MODES);
-  if (parts[0] === 'settings' && method === 'GET') return json(res, 200, { ...(await loadSettings()), permissionModes: PERMISSION_MODES });
-  if (parts[0] === 'settings' && method === 'PUT') return json(res, 200, await saveSettings(await readBody(req)));
+  if (parts[0] === 'settings' && method === 'GET') return json(res, 200, { ...(await loadSettings()), permissionModes: PERMISSION_MODES, repoStatus: await repoStatus() });
+  if (parts[0] === 'settings' && method === 'PUT') {
+    const saved = await saveSettings(await readBody(req));
+    watch(); // a freshly cloned repo needs watching too
+    return json(res, 200, saved);
+  }
   return json(res, 404, { error: 'Not found' });
 }
 
@@ -194,7 +226,7 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return send(res, 404, 'Not found');
       if (!rest) return send(res, 302, '', { location: `/notebooks/${name}/` });
       if (rest === '/' || rest === '/index.html') return serveFile(res, VIEWER, 'notebook.html');
-      return serveFile(res, path.join(NOTEBOOKS_DIR, name), rest.slice(1));
+      return serveFile(res, notebookDir(name), rest.slice(1));
     }
     send(res, 404, 'Not found');
   } catch (err) {

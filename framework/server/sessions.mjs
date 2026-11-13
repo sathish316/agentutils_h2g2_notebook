@@ -78,6 +78,12 @@ export class SessionManager {
     return () => { ch.subscribers.delete(fn); this.globalSubscribers.delete(fn); };
   }
 
+  /** Is an agent request running or queued for this notebook? (Moving it to another place is refused meanwhile.) */
+  isBusy(notebook) {
+    const ch = this.channels.get(notebook);
+    return !!ch && (!!ch.running || ch.queue.length > 0);
+  }
+
   state(notebook) {
     const ch = this.#channel(notebook);
     const pub = (j) => j && { id: j.id, mode: j.mode, agentId: j.agentId, chapterId: j.chapterId, topicId: j.topicId, message: j.message, createdAt: j.createdAt };
