@@ -1,0 +1,64 @@
+{
+  "chapters": [
+    {
+      "id": "durable-execution",
+      "title": "Durable execution: why Temporal exists",
+      "file": "chapters/durable-execution.md",
+      "summary": "The problem Temporal solves and the moving parts that solve it"
+    },
+    {
+      "id": "event-history-and-replay",
+      "title": "Event history and replay",
+      "summary": "How a workflow survives a crash: the event log, replay, and why workflow code must be deterministic",
+      "status": "planned"
+    },
+    {
+      "id": "activities-retries-timeouts",
+      "title": "Activities, retries and timeouts",
+      "summary": "Where side effects live: retry policies, the four activity timeouts, heartbeats and idempotency",
+      "status": "planned"
+    },
+    {
+      "id": "timers-and-long-running",
+      "title": "Timers, schedules and long-running workflows",
+      "summary": "Durable sleep, cron-like schedules, and Continue-As-New for workflows that run for months",
+      "status": "planned"
+    },
+    {
+      "id": "signals-queries-updates",
+      "title": "Talking to running workflows",
+      "summary": "Signals, Queries and Updates: sending data into, and reading state out of, a live workflow",
+      "status": "planned"
+    },
+    {
+      "id": "failures-and-sagas",
+      "title": "Failure handling and sagas",
+      "summary": "Compensating actions, cancellation, and modelling multi-step transactions without a distributed lock",
+      "status": "planned"
+    },
+    {
+      "id": "child-workflows",
+      "title": "Child workflows and composition",
+      "summary": "Breaking big processes into child workflows; when to use children vs activities",
+      "status": "planned"
+    },
+    {
+      "id": "versioning",
+      "title": "Versioning workflow code",
+      "summary": "Changing workflow logic safely while thousands of executions are still running",
+      "status": "planned"
+    },
+    {
+      "id": "testing",
+      "title": "Testing workflows",
+      "summary": "Time-skipping test environments, mocking activities, and replay tests against real histories",
+      "status": "planned"
+    },
+    {
+      "id": "production",
+      "title": "Running Temporal in production",
+      "summary": "Workers and task queues at scale, Temporal Cloud vs self-hosting, observability and limits",
+      "status": "planned"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "categories": [
+    {
+      "id": "official-docs",
+      "title": "Official docs",
+      "items": [
+        {
+          "id": "what-is-temporal",
+          "title": "What is Temporal?",
+          "url": "https://docs.temporal.io/temporal",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "temporal-workers",
+          "title": "Temporal Workers",
+          "url": "https://docs.temporal.io/workers",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "temporal-workflows",
+          "title": "Temporal Workflows",
+          "url": "https://docs.temporal.io/workflows",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "temporal-activities",
+          "title": "Temporal Activities",
+          "url": "https://docs.temporal.io/activities",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "retry-policies",
+          "title": "Retry Policies",
+          "url": "https://docs.temporal.io/encyclopedia/retry-policies",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "temporal-cli-server-start-dev",
+          "title": "Temporal CLI: server start-dev",
+          "url": "https://docs.temporal.io/cli/server",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        }
+      ]
+    },
+    {
+      "id": "code-examples",
+      "title": "Code & examples",
+      "items": [
+        {
+          "id": "temporal-python-samples",
+          "title": "Temporal Python samples",
+          "url": "https://github.com/temporalio/samples-python",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        }
+      ]
+    },
+    {
+      "id": "talks-interviews",
+      "title": "Talks & interviews",
+      "items": [
+        {
+          "id": "maxim-fateev-on-the-oss-startups-podcast",
+          "title": "Maxim Fateev on the OSS Startups Podcast",
+          "url": "https://temporal.io/blog/oss-startups-podcast",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        },
+        {
+          "id": "se-radio-596-maxim-fateev-on-durable-exe",
+          "title": "SE Radio 596: Maxim Fateev on Durable Execution with Temporal",
+          "url": "https://se-radio.net/2023/12/se-radio-596-maxim-fateev-on-durable-execution-with-temporalse-radio-596/",
+          "source": "web",
+          "chapters": [
+            "durable-execution"
+          ],
+          "accessed": "2026-10-13"
+        }
+      ]
+    }
+  ]
+}
