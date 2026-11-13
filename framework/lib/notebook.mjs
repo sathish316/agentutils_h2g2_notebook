@@ -1,21 +1,15 @@
 import fs from 'node:fs/promises';
 import fss from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { slugify, extractTopics } from '../viewer/js/shared/slug.js';
+import {
+  ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, PLACES, ARCHIVED_MARKER, TAGS_FILE, cloneDir, isGitClone, looksLikeNotebook,
+  notebookDir, locate, folderPlace,
+} from './paths.mjs';
+import { pendingNames } from './places.mjs';
 
-export { slugify, extractTopics };
-
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const NOTEBOOKS_DIR = path.join(ROOT, 'notebooks');
-export const FRAMEWORK_DIR = path.join(ROOT, 'framework');
+export { slugify, extractTopics, ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, notebookDir, ARCHIVED_MARKER, TAGS_FILE };
 export const SCOPES = ['general', 'org'];
-export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-
-export function notebookDir(name) {
-  if (!NAME_RE.test(name)) throw new Error(`Invalid notebook name: ${name}`);
-  return path.join(NOTEBOOKS_DIR, name);
-}
 
 async function readJson(file, fallback) {
   try {
@@ -33,8 +27,6 @@ async function writeJson(file, data) {
 }
 
 export const EMPTY_TOC = { chapters: [] };
-export const ARCHIVED_MARKER = '.archived';
-export const TAGS_FILE = '.tags.json'; // tags for empty folders (no notebook.json yet)
 export const TAG_RE = /^[a-z0-9][a-z0-9._-]{0,31}$/;
 
 /** "#Foo Bar" -> "foo-bar". Returns '' when nothing usable is left. */
@@ -52,21 +44,34 @@ export async function isNotebook(name) {
   return NAME_RE.test(name) && fss.existsSync(path.join(notebookDir(name), 'notebook.json'));
 }
 
-export async function listNotebooks() {
-  const entries = await fs.readdir(NOTEBOOKS_DIR, { withFileTypes: true }).catch(() => []);
+/**
+ * All notebooks from every place (local, then saved, then shared), one entry per name. Each carries `place`.
+ * With { sync: true }, saved/shared entries also carry `dirty` (uncommitted or unpushed changes).
+ */
+export async function listNotebooks({ sync = false } = {}) {
+  const seen = new Set();
   const out = [];
-  for (const e of entries) {
-    if (!e.isDirectory() || !NAME_RE.test(e.name)) continue;
-    const dir = path.join(NOTEBOOKS_DIR, e.name);
-    const meta = await readJson(path.join(dir, 'notebook.json'), null).catch(() => null);
-    if (!meta) {
-      const archived = fss.existsSync(path.join(dir, ARCHIVED_MARKER));
-      const tags = normalizeTags(await readJson(path.join(dir, TAGS_FILE), []).catch(() => []));
-      out.push({ name: e.name, title: e.name, initialized: false, tags, ...(archived && { archived }) });
-      continue;
+  for (const place of PLACES) {
+    const root = place === 'local' ? NOTEBOOKS_DIR : cloneDir(place);
+    if (place !== 'local' && !isGitClone(place)) continue;
+    const pending = sync && place !== 'local' ? await pendingNames(place) : null;
+    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (!e.isDirectory() || !NAME_RE.test(e.name) || seen.has(e.name)) continue;
+      const dir = path.join(root, e.name);
+      if (place !== 'local' && !looksLikeNotebook(dir)) continue;
+      seen.add(e.name);
+      const extra = { place, ...(pending && { dirty: pending.has(e.name) }) };
+      const meta = await readJson(path.join(dir, 'notebook.json'), null).catch(() => null);
+      if (!meta) {
+        const archived = fss.existsSync(path.join(dir, ARCHIVED_MARKER));
+        const tags = normalizeTags(await readJson(path.join(dir, TAGS_FILE), []).catch(() => []));
+        out.push({ name: e.name, title: e.name, initialized: false, tags, ...(archived && { archived }), ...extra });
+        continue;
+      }
+      const toc = await readJson(path.join(dir, 'toc.json'), EMPTY_TOC).catch(() => EMPTY_TOC);
+      out.push({ ...meta, tags: normalizeTags(meta.tags), name: e.name, initialized: true, chapterCount: flatten(toc.chapters).length, ...extra });
     }
-    const toc = await readJson(path.join(dir, 'toc.json'), EMPTY_TOC).catch(() => EMPTY_TOC);
-    out.push({ ...meta, tags: normalizeTags(meta.tags), name: e.name, initialized: true, chapterCount: flatten(toc.chapters).length });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -108,6 +113,7 @@ export async function createNotebook(name, { title, scope = 'general', descripti
   if (!SCOPES.includes(scope)) throw new Error(`scope must be one of: ${SCOPES.join(', ')}`);
   const dir = notebookDir(name);
   if (fss.existsSync(path.join(dir, 'notebook.json'))) throw new Error(`Notebook ${name} already exists`);
+  if (!locate(name) && folderPlace(name)) throw new Error(`The name "${name}" is already used by a folder in the ${folderPlace(name)} repo`);
   await fs.mkdir(path.join(dir, 'chapters'), { recursive: true });
   await fs.mkdir(path.join(dir, 'assets'), { recursive: true });
   const now = new Date().toISOString();
