@@ -203,12 +203,28 @@ function cover(nb) {
     tagRow(nb));
 }
 
+async function removeTag(nb, tag) {
+  const before = nb.tags || [];
+  const set = async (next) => { nb.tags = (await api.setTags(nb.name, next)).tags; render(); };
+  try {
+    await set(before.filter((x) => x !== tag));
+    toast(`Removed #${tag} from “${nb.title}”`, { action: 'Undo', onAction: () => set(before).catch((ex) => toast(ex.message)) });
+  } catch (ex) {
+    toast(ex.message);
+  }
+}
+
 function tagRow(nb) {
   return h('div', { class: 'cover-tags' },
-    (nb.tags || []).map((t) => h('button', {
-      class: `tag${selected.has(t) ? ' on' : ''}`, type: 'button', title: selected.has(t) ? `Stop filtering by #${t}` : `Show notebooks tagged #${t}`,
-      onclick: () => toggleFilter(t),
-    }, `#${t}`)),
+    (nb.tags || []).map((t) => h('span', { class: 'tag-wrap' },
+      h('button', {
+        class: `tag${selected.has(t) ? ' on' : ''}`, type: 'button', title: selected.has(t) ? `Stop filtering by #${t}` : `Show notebooks tagged #${t}`,
+        onclick: () => toggleFilter(t),
+      }, `#${t}`),
+      h('button', {
+        class: 'tag-x', type: 'button', title: `Remove #${t} from this notebook`, 'aria-label': `Remove tag ${t} from ${nb.title}`,
+        html: icon('close', 10), onclick: (e) => { e.stopPropagation(); removeTag(nb, t); },
+      }))),
     h('button', { class: 'tag add', type: 'button', title: 'Add or remove tags', 'aria-label': `Edit tags for ${nb.title}`, onclick: () => tagDialog(nb), html: icon('plus', 14) }));
 }
 

@@ -473,6 +473,11 @@ a { color: var(--accent); }
 .tag .n { font-size: 11px; opacity: .65; }
 .tag.add { padding: 2px 6px; border-style: dashed; }
 .tag.clear { border-color: transparent; text-decoration: underline; }
+.tag-wrap { position: relative; display: inline-flex; }
+.tag-x { position: absolute; top: -6px; right: -5px; width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--ink); color: var(--paper); cursor: pointer; opacity: 0; transition: opacity .12s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.tag-wrap:hover .tag-x, .tag-x:focus-visible { opacity: 1; }
+.tag-x:hover { background: var(--accent); }
+@media (hover: none) { .tag-x { opacity: .8; } }
 .cover-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin-top: 7px; }
 .tag-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -14px 0 24px; }
 .tag-filter .lbl { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin-right: 2px; }
