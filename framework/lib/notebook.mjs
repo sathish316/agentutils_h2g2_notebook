@@ -150,6 +150,22 @@ export async function setArchived(name, archived) {
   return !!archived;
 }
 
+/** Change a notebook's title and/or description (the folder name stays the same). */
+export async function setDetails(name, { title, description } = {}) {
+  const file = path.join(notebookDir(name), 'notebook.json');
+  if (!fss.existsSync(file)) throw new Error(`"${name}" has no notebook.json yet; start the notebook first`);
+  const meta = await readJson(file);
+  if (title !== undefined) {
+    const t = String(title).trim();
+    if (!t) throw new Error('Title cannot be empty');
+    meta.title = t;
+  }
+  if (description !== undefined) meta.description = String(description).trim();
+  meta.updated = new Date().toISOString();
+  await writeJson(file, meta);
+  return { title: meta.title, description: meta.description ?? '' };
+}
+
 /** Replace a notebook's tags (normalized, deduplicated, sorted). Works for empty folders too. */
 export async function setTags(name, tags) {
   const dir = notebookDir(name);

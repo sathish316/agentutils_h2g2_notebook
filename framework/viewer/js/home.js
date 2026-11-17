@@ -61,6 +61,48 @@ function archiveBtn(nb) {
 const badge = (nb) => (!nb.place || nb.place === 'local' ? null
   : h('span', { class: `place-badge ${nb.place}`, title: `${PLACE_LABEL[nb.place]} notebook` }, PLACE_LABEL[nb.place]));
 
+function editBtn(nb) {
+  return h('button', {
+    class: 'cover-edit', type: 'button', title: 'Edit title and description', 'aria-label': `Edit ${nb.title}`,
+    html: icon('pen', 16), onclick: (e) => { e.preventDefault(); e.stopPropagation(); editDialog(nb); },
+  });
+}
+
+/** Pencil dialog: change a notebook's title and description (the folder name stays). */
+function editDialog(nb) {
+  const err = h('div', { class: 'err-text' });
+  const titleIn = h('input', { type: 'text', name: 'title', value: nb.title || '', required: true, maxlength: 120 });
+  const descIn = h('textarea', { name: 'description', rows: 4 });
+  descIn.value = nb.description || '';
+  const f = (label, el) => h('label', { class: 'field' }, h('span', {}, label), el);
+  const form = h('form', { class: 'dlg', method: 'dialog' },
+    h('h2', {}, 'Edit notebook'),
+    h('p', { class: 'sub' }, nb.name),
+    f('Title', titleIn), f('Description', descIn),
+    h('p', { class: 'hint' }, 'The agent reads both when it writes new chapters. A running agent session keeps what it was told earlier; start a new session to pick up changes.'),
+    err,
+    h('div', { class: 'actions' },
+      h('button', { class: 'pill', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+      h('button', { class: 'pill primary', type: 'submit' }, 'Save')));
+  const dlg = h('dialog', {}, form);
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api.setDetails(nb.name, { title: titleIn.value, description: descIn.value });
+      dlg.close();
+      toast('Notebook updated.');
+      await refresh();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  dlg.showModal();
+  titleIn.focus();
+  titleIn.select();
+}
+
 function gearBtn(nb) {
   return h('button', {
     class: 'cover-gear', type: 'button', title: 'Notebook settings (where it lives, sync)', 'aria-label': `Settings for ${nb.title}`,
@@ -149,7 +191,7 @@ function cover(nb) {
   const [c1, c2] = colorsFor(nb.name);
   const fr = fraction(nb);
   return h('div', { class: 'cover-wrap' },
-    badge(nb), syncBtn(nb), gearBtn(nb), archiveBtn(nb),
+    badge(nb), syncBtn(nb), gearBtn(nb), editBtn(nb), archiveBtn(nb),
     h('a', { class: 'cover', href: `/notebooks/${encodeURIComponent(nb.name)}/`, style: { '--c1': c1, '--c2': c2 } },
       h('span', { class: 'band' }),
       h('div', { class: 'label' }, h('div', { class: 't' }, nb.title), nb.description ? h('div', { class: 'd' }, nb.description) : null),

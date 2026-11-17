@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { NOTEBOOKS_DIR, createNotebook, setArchived, setTags, normalizeTag, listNotebooks, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
+import { NOTEBOOKS_DIR, createNotebook, setArchived, setDetails, setTags, normalizeTag, listNotebooks, addChapter, addReference, validateNotebook, loadNotebookForViewer, slugify, extractTopics } from '../lib/notebook.mjs';
 import { parseInfo } from '../viewer/js/shared/fence.js';
 
 const NAME = `zz-test-${process.pid}`;
@@ -69,6 +69,20 @@ test('archive and unarchive', async (t) => {
   assert.equal((await validateNotebook(name)).errors.length, 0);
   await setArchived(name, false);
   assert.ok(!('archived' in (await find())));
+});
+
+test('edit title and description', async (t) => {
+  const name = `${NAME}-details`;
+  t.after(() => fs.rm(path.join(NOTEBOOKS_DIR, name), { recursive: true, force: true }));
+  await createNotebook(name, { title: 'Old', description: 'old d', scope: 'general' });
+  assert.deepEqual(await setDetails(name, { title: '  New  ', description: ' new d ' }), { title: 'New', description: 'new d' });
+  const nb = (await listNotebooks()).find((n) => n.name === name);
+  assert.equal(nb.title, 'New');
+  assert.equal(nb.description, 'new d');
+  await setDetails(name, { description: '' });
+  assert.equal((await listNotebooks()).find((n) => n.name === name).title, 'New');
+  await assert.rejects(setDetails(name, { title: '  ' }), /empty/);
+  assert.equal((await validateNotebook(name)).errors.length, 0);
 });
 
 test('archive an empty folder, then start it', async (t) => {
