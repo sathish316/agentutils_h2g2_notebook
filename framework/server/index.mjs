@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags, notebookDir } from '../lib/notebook.mjs';
+import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags, setDetails, notebookDir } from '../lib/notebook.mjs';
 import { H2G2_DIR, REPO_PLACES, locate } from '../lib/paths.mjs';
 import { movePlace, syncNotebook, repoStatus, placeNotices, DEFAULT_MESSAGES } from '../lib/places.mjs';
 import { agentCommitMessage } from './commit-message.mjs';
@@ -127,6 +127,13 @@ async function api(req, res, parts) {
     if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
     const { archived = true } = await readBody(req);
     return json(res, 200, { name, archived: await setArchived(name, !!archived) });
+  }
+  if (parts[0] === 'notebooks' && parts[2] === 'details' && method === 'PUT') {
+    const name = parts[1];
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
+    const { title, description } = await readBody(req);
+    try { return json(res, 200, { name, ...(await setDetails(name, { title, description })) }); }
+    catch (err) { return json(res, 400, { error: err.message }); }
   }
   if (parts[0] === 'notebooks' && parts[2] === 'tags' && method === 'PUT') {
     const name = parts[1];
