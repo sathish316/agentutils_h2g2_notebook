@@ -15,6 +15,7 @@ export const api = {
   notebooks: () => call('GET', '/api/notebooks'),
   createNotebook: (body) => call('POST', '/api/notebooks', body),
   setTags: (name, tags) => call('PUT', `${nb(name)}/tags`, { tags }),
+  setDetails: (name, body) => call('PUT', `${nb(name)}/details`, body),
   archive: (name, archived) => call('POST', `${nb(name)}/archive`, { archived }),
   places: () => call('GET', '/api/places'),
   setPlace: (name, place) => call('PUT', `${nb(name)}/place`, { place }),

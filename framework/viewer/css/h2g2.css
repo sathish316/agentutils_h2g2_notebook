@@ -503,7 +503,10 @@ a { color: var(--accent); }
 .cover-gear { right: 44px; opacity: 0; transition: opacity .15s; }
 .cover-wrap:hover .cover-gear, .cover-gear:focus-visible { opacity: 1; }
 @media (hover: none) { .cover-gear { opacity: .85; } }
-.cover-sync { right: 80px; }
+.cover-edit { position: absolute; top: 8px; right: 80px; z-index: 2; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: rgba(255,253,248,.92); color: #2b2a33; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.15); opacity: 0; transition: opacity .15s; }
+.cover-wrap:hover .cover-edit, .cover-edit:focus-visible { opacity: 1; }
+@media (hover: none) { .cover-edit { opacity: .85; } }
+.cover-sync { right: 116px; }
 .cover-sync.clean { opacity: .55; }
 .cover-sync.dirty { background: var(--accent); color: #fff; }
 .cover-sync.busy svg { animation: h2g2-spin 1s linear infinite; }
