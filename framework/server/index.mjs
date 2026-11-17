@@ -66,9 +66,11 @@ async function serveFile(res, baseDir, rel) {
 function sse(req, res, notebook) {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
   res.write(`event: hello\ndata: ${JSON.stringify({ state: sessions.state(notebook) })}\n\n`);
-  const unsub = sessions.subscribe(notebook, (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`));
-  const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
-  req.on('close', () => { clearInterval(ping); unsub(); });
+  const write = (chunk) => { if (!res.destroyed && !res.writableEnded) res.write(chunk); };
+  const unsub = sessions.subscribe(notebook, (ev) => write(`data: ${JSON.stringify(ev)}\n\n`));
+  const ping = setInterval(() => write(': ping\n\n'), 25_000);
+  // Listen on the response: the request's 'close' can fire before the client is actually gone.
+  res.on('close', () => { clearInterval(ping); unsub(); });
 }
 
 // Notify browsers when notebook or viewer files change (agents write files; viewers live-refresh).
