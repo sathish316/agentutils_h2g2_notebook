@@ -28,6 +28,7 @@ export class Activity {
     this.#updateHint();
     api.autoApprove(notebook, autoApprovePref.get(notebook)).catch(() => {});
     this.connect();
+    this.#watchVisibility();
   }
 
   open() { this.el.classList.add('open'); this.#scrollEnd(); }
@@ -90,11 +91,49 @@ export class Activity {
     if (!this.jobs.size) this.body.replaceChildren(h('div', { class: 'drawer-empty' }, 'Nothing yet — ask a question on any page and the agent’s work shows up here.'));
   }
 
+  /**
+   * Browsers allow ~6 HTTP/1.1 connections per origin, shared by every tab. A tab left open in the background must
+   * not hold its event stream forever, or a handful of tabs starve every other request (page loads, API calls,
+   * navigating back to the library). So the stream lives only while the tab is visible; coming back to the tab
+   * reconnects and replays what was missed.
+   */
+  #watchVisibility() {
+    const sync = () => (document.hidden ? this.#disconnect() : this.connect());
+    document.addEventListener('visibilitychange', sync);
+    addEventListener('pagehide', () => this.#disconnect());
+    addEventListener('pageshow', (e) => { if (e.persisted && !document.hidden) this.connect(); });
+    if (document.hidden) this.#disconnect();
+  }
+
+  #disconnect() {
+    if (!this.es) return;
+    this.es.close();
+    this.es = null;
+    this.pausedAt ??= Date.now();
+  }
+
+  /** Notebook-change events that arrive in a burst (catch-up after a pause, an agent writing files) refresh the page once. */
+  #notebookChanged(files) {
+    (this.changedFiles ||= new Set());
+    for (const f of files) this.changedFiles.add(f);
+    clearTimeout(this.changedTimer);
+    this.changedTimer = setTimeout(() => {
+      const all = [...this.changedFiles];
+      this.changedFiles.clear();
+      this.onNotebookChanged?.(all);
+    }, 150);
+  }
+
   connect() {
+    if (this.es && this.es.readyState !== EventSource.CLOSED) return;
     this.es?.close();
+    if (document.hidden) return;
     this.es = api.events(this.notebook);
     this.es.addEventListener('hello', () => {
       this.connectedAt = Date.now();
+      // After a pause, events since the tab was hidden still count as live (the reader hasn't seen them).
+      this.liveFrom = this.pausedAt ?? this.connectedAt;
+      this.pausedAt = null;
       this.jobs.clear();
       this.lastJob = null;
       this.body.replaceChildren();
@@ -106,7 +145,7 @@ export class Activity {
     };
   }
 
-  #live(ev) { return ev.ts >= (this.connectedAt || 0) - 500; }
+  #live(ev) { return ev.ts >= (this.liveFrom ?? this.connectedAt ?? 0) - 500; }
 
   #agentName(id) { return this.agents.find((a) => a.id === id)?.name || id; }
 
@@ -274,7 +313,7 @@ export class Activity {
         this.#updateHint();
         if (live) toast('Started a new agent session');
         break;
-      case 'notebook_changed': if (live) this.onNotebookChanged?.(ev.files || []); break;
+      case 'notebook_changed': if (live) this.#notebookChanged(ev.files || []); break;
       case 'framework_changed': if (live) this.onFrameworkChanged?.(); break;
       default: break;
     }
