@@ -9,10 +9,10 @@ npm install            # once
 npm start              # http://127.0.0.1:4242  (PORT/HOST env vars to change)
 ```
 
-- **Library** `/` — notebooks as covers; "New notebook" creates one from the browser. Hover a cover to archive it (sets `"archived": true` in `notebook.json`); archived notebooks move to the **Archived** tab, where they can be restored. The **+** under a cover opens a tag picker (create a tag, or search existing ones); tags show as `#tag` and the **Tags** filter above the shelf shows notebooks with any selected tag (none selected = all).
+- **Library** `/` — notebooks as covers; "New notebook" creates one from the browser. Hover a cover to archive it (sets `"archived": true` in `notebook.json`); archived notebooks move to the **Archived** tab, where they can be restored. **New folder** makes a folder (one level deep). A folder is one thing across places: it holds Local, Saved and Shared notebooks alike (its directory appears in a place when one of that place's notebooks goes in). Click a folder to browse its notebooks, and move a notebook into one from the cover's gear dialog (a notebook keeps its folder when moved between places). The **+** under a cover opens a tag picker (create a tag, or search existing ones); tags show as `#tag` and the **Tags** filter above the shelf shows notebooks with any selected tag (none selected = all).
 - **Notebook** `/notebooks/<name>/` — paper pages with page turns, outline, read/unread checkboxes, and a sticky-note composer on every page (plus a ✎ per topic) to ask the ACP agent for: *new chapter · add topic · change this chapter · just answer · change the framework*. Agent progress streams into the **Agent** drawer, which has a follow-up chat box: it continues the same agent session (context kept for 2 h idle), and the agent either answers or edits the chapter (mode `followup`). Pages live-reload when files change.
 - **Settings** `/settings` — default ACP agent, per-machine command overrides, connection test, permission mode (ask / auto).
-- **CLI** (agents should use it for structure): `node framework/cli.mjs new|chapter|plan|ref|validate|toc|list|tag|untag|archive|unarchive` — run with no args for help.
+- **CLI** (agents should use it for structure): `node framework/cli.mjs new|chapter|plan|ref|validate|toc|list|tag|untag|archive|unarchive|place|folder` — run with no args for help.
 
 ## Notebook anatomy
 
