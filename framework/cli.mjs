@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { movePlace } from './lib/places.mjs';
 import { locate } from './lib/paths.mjs';
+import { createFolder, deleteFolder, listFolders, moveToFolder, MAX_FOLDER_DEPTH } from './lib/folders.mjs';
 import {
   createNotebook, addChapter, addReference, validateNotebook, listNotebooks,
   loadNotebookForViewer, flatten, setArchived, setTags, ROOT,
@@ -12,8 +13,9 @@ import {
 
 const HELP = `h2g2 — notebook tools
 
-  new <name> --title "T" --scope general|org [--description "D"]
-      Scaffold notebooks/<name>/ (notebook.json, toc.json, references.json, chapters/, assets/).
+  new <name> --title "T" --scope general|org [--description "D"] [--folder F]
+      Scaffold notebooks/<name>/ (notebook.json, toc.json, references.json, chapters/, assets/); with --folder it is
+      created inside that existing local folder.
 
   chapter <name> --title "T" [--id ID] [--summary "S"] [--after ID | --before ID | --parent ID] [--file F]
       Add a TOC entry and create chapters/<id>.md (with "# T") if it does not exist.
@@ -35,6 +37,13 @@ const HELP = `h2g2 — notebook tools
   place <name> [local|saved|shared]
       Show where a notebook lives, or move its folder there: local = notebooks/, saved / shared = the clone of the
       repo set in Settings (.h2g2/saved, .h2g2/shared). Refused if that repo is not configured or the name is taken.
+  folder list                      List folders and how many notebooks each holds.
+  folder new <path>                Create an empty folder. A folder is one thing across Local, Saved and Shared: it
+      holds notebooks of any place, and its directory appears in a place when one of that place's notebooks goes in.
+      Nesting is limited by MAX_FOLDER_DEPTH in framework/lib/paths.mjs (now ${MAX_FOLDER_DEPTH}).
+  folder rm <path>                 Delete an empty folder (in every place that has it).
+  folder move <name> [<folder>]    Move a notebook into a folder; omit <folder> (or give /) to move it back to the
+      top level. The notebook stays in its place, and keeps its folder if you move it to another place.
   list                 List notebooks with their place (local, saved or shared); archived ones are marked.
 
 Add --json to any command for machine-readable output.`;
@@ -46,7 +55,7 @@ const { positionals, values } = parseArgs({
     id: { type: 'string' }, summary: { type: 'string' }, after: { type: 'string' },
     before: { type: 'string' }, parent: { type: 'string' }, file: { type: 'string' },
     category: { type: 'string' }, url: { type: 'string' }, source: { type: 'string' },
-    chapter: { type: 'string' }, note: { type: 'string' },
+    chapter: { type: 'string' }, note: { type: 'string' }, folder: { type: 'string' },
     json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
   },
 });
@@ -121,9 +130,30 @@ try {
       print(r.changed ? `moved ${name}: ${r.from} -> ${r.place}` : `${name} is already ${r.place}`, r);
       break;
     }
+    case 'folder': {
+      const [, sub, a, b] = positionals;
+      if (sub === 'list' || !sub) {
+        const all = listFolders();
+        print(all.length ? all.map((f) => `${f.path.padEnd(20)} ${f.notebooks} notebook${f.notebooks === 1 ? '' : 's'}`).join('\n') : '(no folders)', { maxDepth: MAX_FOLDER_DEPTH, folders: all });
+      } else if (sub === 'new') {
+        const parts = need(a, '<path>').split('/').filter(Boolean);
+        const f = await createFolder(parts.pop(), { parent: parts.join('/') });
+        print(`Created folder ${f.path}`, f);
+      } else if (sub === 'rm') {
+        const f = await deleteFolder(need(a, '<path>'));
+        print(`Deleted folder ${f.path}`, f);
+      } else if (sub === 'move') {
+        const target = !b || b === '/' ? '' : b;
+        const r = await moveToFolder(need(a, '<name>'), target);
+        print(r.changed ? `moved ${a}: ${r.from || '/'} -> ${r.folder || '/'}` : `${a} is already in ${r.folder || '/'}`, r);
+      } else {
+        throw new Error(`unknown folder command "${sub}"\n\n${HELP}`);
+      }
+      break;
+    }
     case 'list': {
       const all = await listNotebooks();
-      print(all.map((n) => `${n.name.padEnd(16)} ${n.place.padEnd(7)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}${n.archived ? '  [archived]' : ''}${n.tags.length ? `  ${n.tags.map((t) => `#${t}`).join(' ')}` : ''}`).join('\n'), all);
+      print(all.map((n) => `${n.name.padEnd(16)} ${n.place.padEnd(7)} ${n.initialized ? `${n.chapterCount} chapters  ${n.scope}` : '(not initialized)'}${n.folder ? `  in ${n.folder}/` : ''}${n.archived ? '  [archived]' : ''}${n.tags.length ? `  ${n.tags.map((t) => `#${t}`).join(' ')}` : ''}`).join('\n'), all);
       break;
     }
     default:
