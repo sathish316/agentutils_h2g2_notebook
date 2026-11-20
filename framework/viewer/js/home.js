@@ -11,6 +11,8 @@ function fraction(nb) {
 
 let notebooks = [];
 let places = { repos: {}, notices: [] };
+let folders = []; // { place, path, name, parent, depth, notebooks, empty }
+let maxDepth = 1;
 const PLACE_LABEL = { local: 'Local', saved: 'Saved', shared: 'Shared' };
 const syncing = new Set();
 // Tag filter: a notebook matches when it has ANY selected tag; no selection shows everything.
@@ -33,6 +35,14 @@ function tagCounts() {
 }
 
 const view = () => (location.hash === '#archived' ? 'archived' : 'active');
+
+// A folder view is #folder/<path>; anything else is the library root. A folder spans Local, Saved and Shared.
+const folderHash = (f) => `#folder/${f.path}`;
+function currentFolder() {
+  const m = /^#folder\/(.+)$/.exec(decodeURIComponent(location.hash));
+  return m ? folders.find((f) => f.path === m[1]) || null : null;
+}
+const canNest = (f) => (f ? f.depth : 0) < maxDepth;
 
 async function setArchived(nb, archived) {
   try {
@@ -142,6 +152,17 @@ function placeDialog(nb) {
   const err = h('div', { class: 'err-text' });
   const current = nb.place || 'local';
   let choice = current;
+  const currentFolderPath = nb.folder || '';
+  let folderChoice = currentFolderPath;
+  // Folders span places: the list is the same whichever place is picked, and the folder is kept when the place changes.
+  const folderSel = h('select', { name: 'folder', 'aria-label': 'Folder', onchange: () => { folderChoice = folderSel.value; } });
+  const folderNote = h('p', { class: 'hint' });
+  function drawFolders() {
+    const opts = [...new Set([...folders.map((f) => f.path), ...(currentFolderPath ? [currentFolderPath] : [])])].sort();
+    folderSel.replaceChildren(h('option', { value: '' }, 'No folder (top level)'), ...opts.map((p) => h('option', { value: p, selected: p === folderChoice }, p)));
+    folderSel.value = folderChoice;
+    folderNote.textContent = opts.length ? '' : 'No folders yet. Use “New folder” in the library to make one.';
+  }
   const rows = ['local', 'saved', 'shared'].map((p) => {
     const repo = places.repos?.[p];
     const reason = p === 'local' ? '' : !repo?.configured ? `No ${p} repo is set. Add its git URL in Settings.` : !repo.cloned ? `The ${p} repo's local clone is missing. Save its URL in Settings again.` : '';
@@ -154,27 +175,31 @@ function placeDialog(nb) {
     h('h2', {}, 'Notebook settings'),
     h('p', { class: 'sub' }, nb.title),
     h('div', { class: 'place-opts', role: 'radiogroup', 'aria-label': 'Where this notebook lives' }, rows),
-    h('p', { class: 'hint' }, 'Changing the place moves the notebook’s folder. It stays one copy; moving back to Local moves it back.'),
+    h('p', { class: 'hint' }, 'Changing the place moves the notebook’s directory. It stays one copy; moving back to Local moves it back.'),
+    h('label', { class: 'field' }, 'Folder', folderSel), folderNote,
     err,
     h('div', { class: 'actions' },
       current !== 'local' ? h('button', { class: 'pill', type: 'button', onclick: () => { dlg.close(); syncNow(nb); } }, h('span', { html: icon('sync', 14) }), 'Sync now') : null,
       h('button', { class: 'pill', type: 'button', onclick: () => dlg.close() }, 'Close'),
-      h('button', { class: 'pill primary', type: 'submit' }, 'Move')));
+      h('button', { class: 'pill primary', type: 'submit' }, 'Save')));
   const dlg = h('dialog', {}, form);
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (choice === current) { dlg.close(); return; }
+    if (choice === current && folderChoice === currentFolderPath) { dlg.close(); return; }
     try {
-      await api.setPlace(nb.name, choice);
+      if (choice !== current) await api.setPlace(nb.name, choice);
+      if (folderChoice !== currentFolderPath) await api.setFolder(nb.name, folderChoice);
       dlg.close();
-      toast(`Moved “${nb.title}” to ${PLACE_LABEL[choice]}.`);
+      const dest = `${choice !== current ? PLACE_LABEL[choice] : ''}${folderChoice ? `${choice !== current ? ' / ' : ''}${folderChoice}` : choice === current ? 'the top level' : ''}`;
+      toast(`Moved “${nb.title}” to ${dest}.`);
       await refresh();
     } catch (ex) {
       err.textContent = ex.message;
     }
   });
+  drawFolders();
   dlg.showModal();
 }
 
@@ -298,7 +323,7 @@ function tagDialog(nb) {
   input.focus();
 }
 
-async function newNotebook(name = '') {
+async function newNotebook(name = '', inFolder = null) {
   const [{ agents }, settings] = await Promise.all([api.agents(), api.settings()]);
   const err = h('div', { class: 'err-text' });
   const f = (label, input) => h('label', { class: 'field' }, label, input);
@@ -310,6 +335,7 @@ async function newNotebook(name = '') {
   const agentIn = h('select', { name: 'agentId' }, agents.map((a) => h('option', { value: a.id, selected: a.id === settings.defaultAgent }, `${a.name}${a.available ? '' : ' (not found)'}`)));
   const form = h('form', { class: 'dlg', method: 'dialog' },
     h('h2', {}, 'New notebook'),
+    inFolder ? h('p', { class: 'sub' }, `in folder ${inFolder.path}`) : null,
     f('Folder name', nameIn), f('Title', titleIn), f('Description', descIn), f('Scope', scopeIn),
     f('First question (the agent writes chapter 1 from it — optional)', msgIn), f('Agent', agentIn),
     err,
@@ -323,6 +349,7 @@ async function newNotebook(name = '') {
     e.preventDefault();
     try {
       const body = Object.fromEntries(new FormData(form));
+      if (inFolder) body.folder = inFolder.path;
       await api.createNotebook(body);
       if (body.message) localStorage.setItem(`h2g2:agent:${body.name}`, body.agentId);
       location.href = `/notebooks/${encodeURIComponent(body.name)}/`;
@@ -336,11 +363,69 @@ async function newNotebook(name = '') {
 
 async function refresh() {
   try {
-    [notebooks, places] = await Promise.all([api.notebooks(), api.places()]);
+    let list;
+    [notebooks, places, list] = await Promise.all([api.notebooks(), api.places(), api.folders()]);
+    folders = list.folders;
+    maxDepth = list.maxDepth;
     render();
   } catch (err) {
     toast(err.message);
   }
+}
+
+function folderCover(f) {
+  const n = f.notebooks;
+  const del = f.empty ? h('button', {
+    class: 'cover-archive', type: 'button', title: 'Delete this empty folder', 'aria-label': `Delete folder ${f.name}`, html: icon('close', 16),
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); removeFolder(f); },
+  }) : null;
+  return h('div', { class: 'cover-wrap' }, del,
+    h('a', { class: 'folder-tile', href: folderHash(f), title: `Open folder ${f.path}` },
+      h('span', { class: 'ic', html: icon('folder', 54) }),
+      h('span', { class: 'fname' }, f.name)),
+    h('div', { class: 'under' }, f.empty ? 'empty folder' : `${n} notebook${n === 1 ? '' : 's'}`));
+}
+
+async function removeFolder(f) {
+  try {
+    await api.deleteFolder({ path: f.path });
+    toast(`Deleted folder “${f.name}”`);
+    await refresh();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Create an empty folder. In a folder view it is created inside that folder (when nesting is allowed). */
+function newFolder(parent = null) {
+  const err = h('div', { class: 'err-text' });
+  const nameIn = h('input', { name: 'name', required: true, pattern: '[A-Za-z0-9][A-Za-z0-9._-]*', placeholder: 'databases', autocomplete: 'off' });
+  const f = (label, input) => h('label', { class: 'field' }, label, input);
+  const form = h('form', { class: 'dlg', method: 'dialog' },
+    h('h2', {}, 'New folder'),
+    parent ? h('p', { class: 'sub' }, `inside ${parent.path}`) : null,
+    f('Folder name', nameIn),
+    h('p', { class: 'hint' }, 'A folder holds notebooks from any place: Local, Saved and Shared notebooks can all live in the same folder.'),
+    err,
+    h('div', { class: 'actions' },
+      h('button', { class: 'pill', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+      h('button', { class: 'pill primary', type: 'submit' }, 'Create')));
+  const dlg = h('dialog', {}, form);
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const made = await api.createFolder({ name: nameIn.value.trim(), parent: parent?.path || '' });
+      dlg.close();
+      toast(`Created folder “${made.path}”`);
+      await refresh();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  dlg.showModal();
+  nameIn.focus();
 }
 
 function render() {
@@ -348,10 +433,28 @@ function render() {
   const archived = notebooks.filter((n) => n.archived);
   const active = notebooks.filter((n) => !n.archived);
   const v = view() === 'archived' && archived.length ? 'archived' : 'active';
+  const here = v === 'active' ? currentFolder() : null;
   const tab = (id, label, count) => h('a', { class: `lib-tab${v === id ? ' on' : ''}`, href: id === 'archived' ? '#archived' : '#' }, label, h('span', { class: 'n' }, String(count)));
   $tabs.replaceChildren(tab('active', 'Notebooks', active.length), archived.length ? tab('archived', 'Archived', archived.length) : '');
-  const inView = v === 'archived' ? archived : active;
-  renderFilter(inView);
+  // Breadcrumb for a folder view: Notebooks / <parent> / <folder>
+  if (here) {
+    const trail = here.path.split('/');
+    $crumbs.hidden = false;
+    $crumbs.replaceChildren(
+      h('a', { href: '#' }, 'Notebooks'),
+      ...trail.flatMap((part, i) => {
+        const p = trail.slice(0, i + 1).join('/');
+        const last = i === trail.length - 1;
+        return [h('span', { class: 'sep' }, '/'), last ? h('strong', {}, part) : h('a', { href: folderHash({ path: p }) }, part)];
+      }));
+  } else {
+    $crumbs.hidden = true;
+    $crumbs.replaceChildren();
+  }
+  // Which notebooks does this view list? Archived and tag-filtered views are flat across all folders.
+  const flat = v === 'archived' || selected.size > 0;
+  const inView = v === 'archived' ? archived : flat ? active : active.filter((n) => (here ? n.folder === here.path : !n.folder));
+  renderFilter(v === 'archived' ? archived : active);
   const shown = selected.size ? inView.filter((n) => (n.tags || []).some((t) => selected.has(t))) : inView;
   const empty = selected.size && !shown.length
     ? [h('p', { class: 'shelf-empty' }, `No ${v === 'archived' ? 'archived ' : ''}notebooks tagged ${[...selected].map((t) => `#${t}`).join(' or ')}.`)]
@@ -360,8 +463,14 @@ function render() {
     $shelf.replaceChildren(...shown.map(cover), ...empty);
     return;
   }
-  $shelf.replaceChildren(...shown.map(cover), ...empty,
-    h('div', {}, h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook(); } }, h('div', { class: 'plus' }, '+ New notebook')), h('div', { class: 'under' }, '')));
+  const subfolders = flat ? [] : folders.filter((f) => (here ? f.parent === here.path : !f.parent));
+  const add = [];
+  // New notebooks are created locally (move one to Saved or Shared from its gear dialog), inside the folder being viewed.
+  add.push(h('div', {}, h('a', { class: 'cover blank', href: '#', onclick: (e) => { e.preventDefault(); newNotebook('', here); } }, h('div', { class: 'plus' }, '+ New notebook')), h('div', { class: 'under' }, '')));
+  if (!flat && canNest(here)) {
+    add.push(h('div', {}, h('a', { class: 'folder-tile blank', href: '#', onclick: (e) => { e.preventDefault(); newFolder(here); } }, h('span', { class: 'ic', html: icon('folder-plus', 40) }), h('span', { class: 'fname' }, '+ New folder')), h('div', { class: 'under' }, '')));
+  }
+  $shelf.replaceChildren(...subfolders.map(folderCover), ...shown.map(cover), ...empty, ...add);
 }
 
 function renderFilter(inView) {
@@ -381,6 +490,7 @@ function renderFilter(inView) {
 
 const $notices = h('div', { class: 'place-notices' });
 const $tabs = h('nav', { class: 'lib-tabs', 'aria-label': 'Library view' });
+const $crumbs = h('nav', { class: 'crumbs', 'aria-label': 'Folder', hidden: true });
 const $filter = h('div', { class: 'tag-filter', role: 'group', 'aria-label': 'Filter by tag' });
 const $shelf = h('div', { class: 'shelf' });
 
@@ -388,12 +498,13 @@ async function boot() {
   const bar = h('header', { class: 'toolbar' },
     h('span', { class: 'title' }, '📓 H2G2'),
     h('span', { class: 'spacer' }),
-    h('button', { class: 'tbtn', onclick: () => newNotebook(), html: `${icon('plus')}<span>New notebook</span>` }),
+    h('button', { class: 'tbtn', onclick: () => { const f = currentFolder(); newFolder(f && canNest(f) ? f : null); }, html: `${icon('folder-plus')}<span>New folder</span>` }),
+    h('button', { class: 'tbtn', onclick: () => newNotebook('', currentFolder()), html: `${icon('plus')}<span>New notebook</span>` }),
     h('a', { class: 'tbtn', href: '/settings', title: 'Settings', html: icon('gear') }));
   document.body.append(bar, h('main', { class: 'library' },
     h('h1', {}, 'Library'),
     h('p', { class: 'sub' }, 'The Hitchhiker’s Guide to the Galaxy — living notebooks your agents write with you.'),
-    $notices, $tabs, $filter, $shelf));
+    $notices, $tabs, $crumbs, $filter, $shelf));
   window.addEventListener('hashchange', render);
   await refresh();
   // Sync state follows edits made elsewhere (agents, CLI): refresh when the tab regains focus and every 20 s while visible.
