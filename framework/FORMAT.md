@@ -13,6 +13,7 @@ notebooks/<name>/
   assets/            svg, html visualizations, data files used by chapters
 ```
 
+- **Folders**: a notebook directory may sit at the root of its place (`notebooks/<name>/`, `.h2g2/saved/<name>/`, `.h2g2/shared/<name>/`) or inside a folder (`notebooks/<folder>/<name>/`, same in saved/shared). A folder is a directory containing an empty `.folder` file. A folder is one logical folder across places: its directory is created in a place when a notebook of that place is moved into it. Notebook names stay unique across all folders and places, so URLs and CLI commands still use the bare name. Folders are one level deep; the limit is `MAX_FOLDER_DEPTH` in `framework/lib/paths.mjs` (env `H2G2_MAX_FOLDER_DEPTH`). Manage with `cli.mjs folder list|new|rm|move`.
 - **Planned chapters** (`"status": "planned"`, no `file`) are the learning plan: shown greyed out, written one at a time on request. Add with `cli.mjs plan`; write with `cli.mjs chapter <nb> --id <planned-id>` (promotes in place). Only planned entries may be freely added, renamed, reordered or dropped.
 - TOC order is reading order. `children` nests sub-chapters. Chapter ids are stable slugs; never rename an id that already exists.
 - **Topics** are the `## ` headings of a chapter. Each gets a read/unread checkbox and an "ask" button in the viewer, so make every `##` a self-contained, meaningful topic. Use `###` for sub-sections.
