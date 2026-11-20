@@ -81,6 +81,46 @@ export async function deleteFolder(folder) {
 }
 
 /**
+ * Rename a folder everywhere: its directory is renamed in every place that has it, sub-folders and notebooks move along
+ * (notebooks keep their names, so URLs and the CLI are unaffected). `isBusy(name)` refuses the rename while an agent is
+ * working in any notebook inside. Resolves { path, name, from, notebooks } where `notebooks` are the names that moved.
+ */
+export async function renameFolder(folder, newName, { isBusy } = {}) {
+  const from = normalizeFolder(folder);
+  if (!from) throw new Error('Folder is required');
+  const leaf = String(newName ?? '').trim();
+  if (!leaf) throw new Error('Folder name is required');
+  const info = listFolders().find((f) => f.path === from);
+  if (!info) throw new Error(`No folder "${from}"`);
+  const to = normalizeFolder([info.parent, leaf].filter(Boolean).join('/'));
+  if (to === from) return { path: from, name: info.name, from, notebooks: [], changed: false };
+  if (locate(leaf) || availablePlaces().some((p) => scanPlace(p).notebooks.some((n) => n.name === leaf))) {
+    throw new Error(`A notebook called "${leaf}" already exists; folders and notebooks cannot share a name.`);
+  }
+  if (folderExists(to)) throw new Error(`The folder "${to}" already exists`);
+  const inside = new Set();
+  for (const place of info.places) {
+    for (const n of scanPlace(place).notebooks) if (n.folder === from || n.folder.startsWith(`${from}/`)) inside.add(n.name);
+  }
+  const busy = [...inside].find((n) => isBusy?.(n));
+  if (busy) throw new Error(`An agent request is running on "${busy}". Wait for it to finish (or cancel it) before renaming the folder.`);
+  for (const place of info.places) {
+    if (fss.existsSync(path.join(placeRoot(place), to))) throw new Error(`The ${place} place already has something called "${to}". Nothing was renamed.`);
+  }
+  const done = [];
+  try {
+    for (const place of info.places) {
+      await fs.rename(path.join(placeRoot(place), from), path.join(placeRoot(place), to));
+      done.push(place);
+    }
+  } catch (err) {
+    for (const place of done) await fs.rename(path.join(placeRoot(place), to), path.join(placeRoot(place), from)).catch(() => {});
+    throw new Error(`Could not rename the folder in ${info.places[done.length]}: ${err.message}. Nothing was renamed.`);
+  }
+  return { path: to, name: leaf, from, notebooks: [...inside].sort(), changed: true };
+}
+
+/**
  * Move a notebook into a folder ('' = back to the place root); it stays in its place. The folder must exist (in any place).
  * `isBusy(name)` lets the server refuse while an agent request is working in the notebook.
  */
