@@ -3,10 +3,11 @@ import fss from 'node:fs';
 import path from 'node:path';
 import { slugify, extractTopics } from '../viewer/js/shared/slug.js';
 import {
-  ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, PLACES, ARCHIVED_MARKER, TAGS_FILE, cloneDir, isGitClone, looksLikeNotebook,
+  ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, PLACES, ARCHIVED_MARKER, TAGS_FILE, isGitClone, scanPlace, normalizeFolder, placeRoot,
   notebookDir, locate, folderPlace,
 } from './paths.mjs';
 import { pendingNames } from './places.mjs';
+import { listFolders, ensureFolder } from './folders.mjs';
 
 export { slugify, extractTopics, ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, notebookDir, ARCHIVED_MARKER, TAGS_FILE };
 export const SCOPES = ['general', 'org'];
@@ -52,25 +53,22 @@ export async function listNotebooks({ sync = false } = {}) {
   const seen = new Set();
   const out = [];
   for (const place of PLACES) {
-    const root = place === 'local' ? NOTEBOOKS_DIR : cloneDir(place);
     if (place !== 'local' && !isGitClone(place)) continue;
     const pending = sync && place !== 'local' ? await pendingNames(place) : null;
-    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
-    for (const e of entries) {
-      if (!e.isDirectory() || !NAME_RE.test(e.name) || seen.has(e.name)) continue;
-      const dir = path.join(root, e.name);
-      if (place !== 'local' && !looksLikeNotebook(dir)) continue;
-      seen.add(e.name);
-      const extra = { place, ...(pending && { dirty: pending.has(e.name) }) };
+    for (const entry of scanPlace(place).notebooks) {
+      if (seen.has(entry.name)) continue;
+      const { name, dir, folder } = entry;
+      seen.add(name);
+      const extra = { place, folder, ...(pending && { dirty: pending.has(name) }) };
       const meta = await readJson(path.join(dir, 'notebook.json'), null).catch(() => null);
       if (!meta) {
         const archived = fss.existsSync(path.join(dir, ARCHIVED_MARKER));
         const tags = normalizeTags(await readJson(path.join(dir, TAGS_FILE), []).catch(() => []));
-        out.push({ name: e.name, title: e.name, initialized: false, tags, ...(archived && { archived }), ...extra });
+        out.push({ name, title: name, initialized: false, tags, ...(archived && { archived }), ...extra });
         continue;
       }
       const toc = await readJson(path.join(dir, 'toc.json'), EMPTY_TOC).catch(() => EMPTY_TOC);
-      out.push({ ...meta, tags: normalizeTags(meta.tags), name: e.name, initialized: true, chapterCount: flatten(toc.chapters).length, ...extra });
+      out.push({ ...meta, tags: normalizeTags(meta.tags), name, initialized: true, chapterCount: flatten(toc.chapters).length, ...extra });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -109,11 +107,20 @@ export async function loadNotebookForViewer(name) {
   return { meta: nb.meta, toc: { chapters: await enrich(nb.toc.chapters) }, references: nb.references };
 }
 
-export async function createNotebook(name, { title, scope = 'general', description = '' } = {}) {
+export async function createNotebook(name, { title, scope = 'general', description = '', folder = '' } = {}) {
   if (!SCOPES.includes(scope)) throw new Error(`scope must be one of: ${SCOPES.join(', ')}`);
-  const dir = notebookDir(name);
+  let dir = notebookDir(name);
   if (fss.existsSync(path.join(dir, 'notebook.json'))) throw new Error(`Notebook ${name} already exists`);
-  if (!locate(name) && folderPlace(name)) throw new Error(`The name "${name}" is already used by a folder in the ${folderPlace(name)} repo`);
+  if (!locate(name) && folder) {
+    // A new notebook is created locally, inside an existing folder.
+    const f = normalizeFolder(folder);
+    if (f && !listFolders().some((x) => x.path === f)) throw new Error(`The folder "${f}" does not exist`);
+    await ensureFolder('local', f);
+    if (folderPlace(name)) throw new Error(`The name "${name}" is already used by a folder or notebook in the ${folderPlace(name)} place`);
+    dir = path.join(placeRoot('local'), f, name);
+  } else if (!locate(name) && folderPlace(name)) {
+    throw new Error(`The name "${name}" is already used by a folder in the ${folderPlace(name)} repo`);
+  }
   await fs.mkdir(path.join(dir, 'chapters'), { recursive: true });
   await fs.mkdir(path.join(dir, 'assets'), { recursive: true });
   const now = new Date().toISOString();
