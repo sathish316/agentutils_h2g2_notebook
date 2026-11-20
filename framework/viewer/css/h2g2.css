@@ -466,6 +466,20 @@ a { color: var(--accent); }
 .lib-tab.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .lib-tab .n { font-size: 12px; opacity: .7; }
 .cover-wrap { position: relative; }
+/* folders */
+.folder-tile { position: relative; aspect-ratio: 3 / 4; border-radius: 14px; padding: 20px 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-decoration: none; color: var(--ink); cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper)); border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 10px 22px rgba(40,30,10,.12); transition: transform .2s, box-shadow .2s; }
+.folder-tile:hover { transform: translateY(-4px); box-shadow: 0 14px 28px rgba(40,30,10,.2); }
+.folder-tile .ic { color: var(--accent); display: grid; }
+.folder-tile .fname { font-family: var(--font-title); font-weight: 650; font-size: 19px; line-height: 1.15; text-align: center; word-break: break-word; }
+.folder-tile.blank { background: transparent; border-style: dashed; box-shadow: none; color: var(--ink-soft); }
+.folder-tile.blank:hover { transform: none; border-color: var(--accent); }
+.folder-tile.blank .fname { font-family: var(--font-body); font-size: 15px; font-weight: 600; }
+.crumbs { display: flex; align-items: center; gap: 8px; margin: -6px 0 22px; font-size: 15px; color: var(--ink-soft); }
+.crumbs a { color: var(--ink-soft); text-decoration: none; }
+.crumbs a:hover { color: var(--accent); }
+.crumbs .sep { opacity: .5; }
+.crumbs strong { color: var(--ink); font-weight: 650; }
 /* ---------- tags ---------- */
 .tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; line-height: 1.6; cursor: pointer; border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); background: transparent; color: var(--ink-soft); }
 .tag:hover { color: var(--accent); border-color: var(--accent); }
