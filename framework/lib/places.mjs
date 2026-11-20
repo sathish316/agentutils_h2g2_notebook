@@ -4,8 +4,9 @@ import fss from 'node:fs';
 import path from 'node:path';
 import { git, ok } from './git.mjs';
 import {
-  H2G2_DIR, SETTINGS_FILE, NAME_RE, PLACES, REPO_PLACES, cloneDir, placeRoot, isGitClone, looksLikeNotebook, locate,
+  H2G2_DIR, SETTINGS_FILE, NAME_RE, PLACES, REPO_PLACES, cloneDir, placeRoot, isGitClone, locate, scanPlace, splitNotebookPath, FOLDER_MARKER,
 } from './paths.mjs';
+import { ensureFolder } from './folders.mjs';
 
 export { PLACES, REPO_PLACES };
 export const DEFAULT_MESSAGES = { saved: 'Saved notes updates', shared: 'Shared notes updates' };
@@ -35,11 +36,7 @@ export async function placeNotices() {
 }
 
 function notebooksIn(place) {
-  const root = cloneDir(place);
-  if (!isGitClone(place)) return [];
-  return fss.readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && NAME_RE.test(e.name) && looksLikeNotebook(path.join(root, e.name)))
-    .map((e) => e.name);
+  return scanPlace(place).notebooks.map((n) => (n.folder ? `${n.folder}/${n.name}` : n.name));
 }
 
 /**
@@ -100,8 +97,10 @@ export async function movePlace(name, target, { isBusy } = {}) {
     const url = (await repoUrls())[target];
     throw new Error(url ? `The ${target} repo's local clone is missing. Save its URL in Settings again to re-clone it.` : `The ${target} repo is not configured. Set its URL in Settings first.`);
   }
-  const dest = path.join(placeRoot(target), name);
+  // The notebook keeps its folder: the same folder is created in the target place when it isn't there yet.
+  const dest = path.join(placeRoot(target), from.folder, name);
   if (fss.existsSync(dest)) throw new Error(`The ${target} place already has a folder named "${name}". Nothing was moved.`);
+  if (from.folder) await ensureFolder(target, from.folder);
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await moveDir(from.dir, dest);
   return { name, place: target, from: from.place, changed: true };
@@ -115,7 +114,12 @@ function withLock(key, fn) {
   return run;
 }
 
-const parseNames = (text) => new Set(text.split('\n').map((l) => l.trim().replace(/^"|"$/g, '').split('/')[0]).filter((n) => NAME_RE.test(n)));
+/** Notebook names touched by a list of repo-relative paths (a path may sit inside a folder: 'db/kafka/chapters/a.md'). */
+const parseNames = (text, cwd) => new Set(text.split('\n')
+  .map((l) => l.trim().replace(/^"|"$/g, ''))
+  .filter(Boolean)
+  .map((l) => splitNotebookPath(cwd, l)?.name)
+  .filter((n) => n && NAME_RE.test(n)));
 
 async function hasUpstream(cwd) { return ok(git(cwd, ['rev-parse', '--verify', '-q', '@{u}'])); }
 
@@ -127,10 +131,10 @@ export async function pendingNames(place) {
   try {
     const status = await git(cwd, ['--no-optional-locks', 'status', '--porcelain', '-uall']);
     for (const line of status.split('\n')) {
-      for (const part of line.slice(3).split(' -> ')) for (const n of parseNames(part)) out.add(n);
+      for (const part of line.slice(3).split(' -> ')) for (const n of parseNames(part, cwd)) out.add(n);
     }
     const range = (await hasUpstream(cwd)) ? ['@{u}..HEAD'] : ['HEAD'];
-    for (const n of parseNames(await git(cwd, ['log', '--name-only', '--pretty=format:', ...range]).catch(() => ''))) out.add(n);
+    for (const n of parseNames(await git(cwd, ['log', '--name-only', '--pretty=format:', ...range]).catch(() => ''), cwd)) out.add(n);
   } catch { /* an unreadable repo shows no pending state */ }
   return out;
 }
@@ -149,28 +153,51 @@ export function syncNotebook(name, { messageFor } = {}) {
   const loc = locate(name);
   if (!loc) return Promise.reject(new Error(`No notebook folder "${name}"`));
   if (loc.place === 'local') return Promise.reject(new Error(`"${name}" is a local notebook; move it to Saved or Shared to sync it.`));
-  return withLock(loc.place, () => doSync(name, loc.place, messageFor));
+  const rel = loc.folder ? `${loc.folder}/${name}` : name; // path inside the clone
+  return withLock(loc.place, () => doSync(name, rel, loc.folder, loc.place, messageFor));
 }
 
-async function doSync(name, place, messageFor) {
+/**
+ * Paths to commit for a notebook: its folder in the clone, each enclosing folder's marker (so a new folder reaches the
+ * remote with its first notebook), and any other place in the clone where uncommitted changes of the same notebook
+ * show up (e.g. the old location after it moved between folders).
+ */
+async function specsFor(cwd, name, rel, folder) {
+  const parts = folder.split('/').filter(Boolean);
+  const specs = new Set([rel, ...parts.map((_, i) => `${parts.slice(0, i + 1).join('/')}/${FOLDER_MARKER}`)]);
+  const status = await git(cwd, ['--no-optional-locks', 'status', '--porcelain', '-uall']).catch(() => '');
+  for (const line of status.split('\n')) {
+    for (const part of line.slice(3).split(' -> ')) {
+      const hit = splitNotebookPath(cwd, part.trim().replace(/^"|"$/g, ''));
+      if (hit?.name === name) specs.add(hit.folder ? `${hit.folder}/${name}` : name);
+    }
+    // A folder deleted in the app leaves its marker deleted in the clone; the next sync records that.
+    const p = line.slice(3).trim().replace(/^"|"$/g, '');
+    if (/D/.test(line.slice(0, 2)) && (p === FOLDER_MARKER || p.endsWith(`/${FOLDER_MARKER}`))) specs.add(p);
+  }
+  return [...specs];
+}
+
+async function doSync(name, rel, folder, place, messageFor) {
   const cwd = cloneDir(place);
+  const specs = await specsFor(cwd, name, rel, folder);
   const hasHead = await ok(git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']));
   const before = hasHead ? (await git(cwd, ['rev-parse', 'HEAD'])).trim() : null;
 
-  await git(cwd, ['add', '-A', '--', name]);
-  const staged = (await git(cwd, ['diff', '--cached', '--name-only', '--', name])).trim();
+  await git(cwd, ['add', '-A', '--', ...specs]);
+  const staged = (await git(cwd, ['diff', '--cached', '--name-only', '--', ...specs])).trim();
   let message = null;
   if (staged) {
     let proposed = null;
     if (messageFor) {
       try {
-        const diff = await git(cwd, ['diff', '--cached', '--', name]);
+        const diff = await git(cwd, ['diff', '--cached', '--', ...specs]);
         proposed = await messageFor({ diff, place, name });
       } catch { proposed = null; }
     }
     message = String(proposed || '').trim() || DEFAULT_MESSAGES[place];
-    await git(cwd, ['commit', '-m', message, '--', name]);
-  } else if (!(await unpushedFor(cwd, name))) {
+    await git(cwd, ['commit', '-m', message, '--', ...specs]);
+  } else if (!(await unpushedFor(cwd, rel))) {
     return { status: 'nothing', committed: false, message: null };
   }
 
