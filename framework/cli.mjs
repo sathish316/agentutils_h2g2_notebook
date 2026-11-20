@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { movePlace } from './lib/places.mjs';
 import { locate } from './lib/paths.mjs';
-import { createFolder, deleteFolder, listFolders, moveToFolder, MAX_FOLDER_DEPTH } from './lib/folders.mjs';
+import { createFolder, deleteFolder, renameFolder, listFolders, moveToFolder, MAX_FOLDER_DEPTH } from './lib/folders.mjs';
 import {
   createNotebook, addChapter, addReference, validateNotebook, listNotebooks,
   loadNotebookForViewer, flatten, setArchived, setTags, ROOT,
@@ -41,6 +41,7 @@ const HELP = `h2g2 — notebook tools
   folder new <path>                Create an empty folder. A folder is one thing across Local, Saved and Shared: it
       holds notebooks of any place, and its directory appears in a place when one of that place's notebooks goes in.
       Nesting is limited by MAX_FOLDER_DEPTH in framework/lib/paths.mjs (now ${MAX_FOLDER_DEPTH}).
+  folder rename <path> <new-name>  Rename a folder in every place that has it (notebooks keep their names).
   folder rm <path>                 Delete an empty folder (in every place that has it).
   folder move <name> [<folder>]    Move a notebook into a folder; omit <folder> (or give /) to move it back to the
       top level. The notebook stays in its place, and keeps its folder if you move it to another place.
@@ -139,6 +140,9 @@ try {
         const parts = need(a, '<path>').split('/').filter(Boolean);
         const f = await createFolder(parts.pop(), { parent: parts.join('/') });
         print(`Created folder ${f.path}`, f);
+      } else if (sub === 'rename') {
+        const r = await renameFolder(need(a, '<path>'), need(b, '<new-name>'));
+        print(r.changed ? `renamed ${r.from} -> ${r.path}${r.notebooks.length ? ` (${r.notebooks.join(', ')})` : ''}` : `${a} already has that name`, r);
       } else if (sub === 'rm') {
         const f = await deleteFolder(need(a, '<path>'));
         print(`Deleted folder ${f.path}`, f);

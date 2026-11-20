@@ -15,7 +15,7 @@ Object.assign(process.env, {
 });
 const { createNotebook, listNotebooks, notebookDir, loadNotebookForViewer, setArchived } = await import('../lib/notebook.mjs');
 const { applyRepo, movePlace, syncNotebook, pendingNames } = await import('../lib/places.mjs');
-const { createFolder, deleteFolder, moveToFolder, listFolders, MAX_FOLDER_DEPTH } = await import('../lib/folders.mjs');
+const { createFolder, deleteFolder, renameFolder, moveToFolder, listFolders, MAX_FOLDER_DEPTH } = await import('../lib/folders.mjs');
 const { H2G2_DIR, NOTEBOOKS_DIR, cloneDir, locate, splitNotebookPath, normalizeFolder } = await import('../lib/paths.mjs');
 
 const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -165,4 +165,46 @@ test('paths from the file watcher resolve to the notebook inside a folder', asyn
   await createNotebook('kafka', { title: 'K', folder: 'db' });
   assert.deepEqual(splitNotebookPath(NOTEBOOKS_DIR, 'db/kafka/chapters/a.md'), { name: 'kafka', folder: 'db', rest: 'chapters/a.md' });
   assert.deepEqual(splitNotebookPath(NOTEBOOKS_DIR, 'kafka/toc.json'), { name: 'kafka', folder: '', rest: 'toc.json' });
+});
+
+test('rename a folder everywhere: local and saved directories, notebooks keep their names', async () => {
+  const remote = await configure('saved');
+  await createNotebook('alpha', { title: 'A' });
+  await createNotebook('beta', { title: 'B' });
+  await createFolder('db');
+  await moveToFolder('alpha', 'db');
+  await movePlace('beta', 'saved');
+  await moveToFolder('beta', 'db');
+  assert.deepEqual(listFolders().map((f) => f.places), [['local', 'saved']]);
+
+  const r = await renameFolder('db', 'databases');
+  assert.deepEqual([r.path, r.from, r.notebooks, r.changed], ['databases', 'db', ['alpha', 'beta'], true]);
+  assert.deepEqual(listFolders().map((f) => [f.path, f.places, f.notebooks]), [['databases', ['local', 'saved'], 2]]);
+  assert.equal(locate('alpha').folder, 'databases');
+  assert.equal(locate('beta').folder, 'databases');
+  assert.ok(await exists(path.join(NOTEBOOKS_DIR, 'databases', 'alpha', 'notebook.json')));
+  assert.ok(!(await exists(path.join(NOTEBOOKS_DIR, 'db'))));
+  assert.ok(await exists(path.join(cloneDir('saved'), 'databases', '.folder')));
+  assert.deepEqual((await renameFolder('databases', 'databases')).changed, false);
+
+  // the saved copy: one sync records the new folder and removes the old one from the remote
+  assert.ok((await pendingNames('saved')).has('beta'));
+  assert.equal((await syncNotebook('beta')).status, 'pushed');
+  assert.equal((await pendingNames('saved')).size, 0);
+  const files = sh(remote, 'ls-tree', '-r', '--name-only', 'main').split('\n');
+  assert.ok(files.includes('databases/beta/notebook.json') && files.includes('databases/.folder'));
+  assert.ok(!files.some((f) => f.startsWith('db/')));
+});
+
+test('rename rules: unique names, no clashes, not while an agent is working', async () => {
+  await createNotebook('alpha', { title: 'A' });
+  await createFolder('db');
+  await createFolder('ops');
+  await moveToFolder('alpha', 'db');
+  await assert.rejects(renameFolder('db', 'ops'), /already exists/);
+  await assert.rejects(renameFolder('db', 'alpha'), /cannot share a name/);
+  await assert.rejects(renameFolder('db', 'bad name'), /Invalid folder name/);
+  await assert.rejects(renameFolder('nope', 'x'), /No folder/);
+  await assert.rejects(renameFolder('db', 'databases', { isBusy: (n) => n === 'alpha' }), /agent request is running on "alpha"/);
+  assert.equal(locate('alpha').folder, 'db');
 });

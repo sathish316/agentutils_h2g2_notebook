@@ -4,7 +4,7 @@ import fss from 'node:fs';
 import path from 'node:path';
 import { git, ok } from './git.mjs';
 import {
-  H2G2_DIR, SETTINGS_FILE, NAME_RE, PLACES, REPO_PLACES, cloneDir, placeRoot, isGitClone, locate, scanPlace, splitNotebookPath, FOLDER_MARKER,
+  H2G2_DIR, SETTINGS_FILE, NAME_RE, PLACES, REPO_PLACES, cloneDir, placeRoot, isGitClone, locate, scanPlace, splitNotebookPath, FOLDER_MARKER, MAX_FOLDER_DEPTH,
 } from './paths.mjs';
 import { ensureFolder } from './folders.mjs';
 
@@ -168,8 +168,11 @@ async function specsFor(cwd, name, rel, folder) {
   const status = await git(cwd, ['--no-optional-locks', 'status', '--porcelain', '-uall']).catch(() => '');
   for (const line of status.split('\n')) {
     for (const part of line.slice(3).split(' -> ')) {
-      const hit = splitNotebookPath(cwd, part.trim().replace(/^"|"$/g, ''));
-      if (hit?.name === name) specs.add(hit.folder ? `${hit.folder}/${name}` : name);
+      // The notebook's name may sit under a folder that no longer exists (the folder was renamed or removed).
+      const segs = part.trim().replace(/^"|"$/g, '').split('/').filter(Boolean);
+      for (let i = 0; i <= Math.min(MAX_FOLDER_DEPTH, segs.length - 2); i++) {
+        if (segs[i] === name) { specs.add(segs.slice(0, i + 1).join('/')); break; }
+      }
     }
     // A folder deleted in the app leaves its marker deleted in the clone; the next sync records that.
     const p = line.slice(3).trim().replace(/^"|"$/g, '');
