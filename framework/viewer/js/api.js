@@ -19,6 +19,7 @@ export const api = {
   archive: (name, archived) => call('POST', `${nb(name)}/archive`, { archived }),
   folders: () => call('GET', '/api/folders'),
   createFolder: (body) => call('POST', '/api/folders', body),
+  renameFolder: (body) => call('PUT', '/api/folders', body),
   deleteFolder: (body) => call('DELETE', '/api/folders', body),
   setFolder: (name, folder) => call('PUT', `${nb(name)}/folder`, { folder }),
   places: () => call('GET', '/api/places'),

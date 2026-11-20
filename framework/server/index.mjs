@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags, setDetails, notebookDir } from '../lib/notebook.mjs';
 import { H2G2_DIR, REPO_PLACES, locate, splitNotebookPath } from '../lib/paths.mjs';
-import { listFolders, createFolder, deleteFolder, moveToFolder, MAX_FOLDER_DEPTH } from '../lib/folders.mjs';
+import { listFolders, createFolder, deleteFolder, renameFolder, moveToFolder, MAX_FOLDER_DEPTH } from '../lib/folders.mjs';
 import { movePlace, syncNotebook, repoStatus, placeNotices, DEFAULT_MESSAGES } from '../lib/places.mjs';
 import { agentCommitMessage } from './commit-message.mjs';
 import { AcpConnection } from './acp-client.mjs';
@@ -128,6 +128,13 @@ async function api(req, res, parts) {
   if (parts[0] === 'folders' && parts.length === 1 && method === 'POST') {
     const { name, parent = '' } = await readBody(req);
     return json(res, 201, await createFolder(String(name || ''), { parent: String(parent || '') }));
+  }
+  if (parts[0] === 'folders' && parts.length === 1 && method === 'PUT') {
+    const { path: folder, name } = await readBody(req);
+    const r = await renameFolder(String(folder || ''), String(name || ''), { isBusy: (n) => sessions.isBusy(n) });
+    // Idle agent sessions were told the old directory; start them fresh so follow-ups use the new path.
+    for (const n of r.notebooks) sessions.reset(n);
+    return json(res, 200, r);
   }
   if (parts[0] === 'folders' && parts.length === 1 && method === 'DELETE') {
     const { path: folder } = await readBody(req);

@@ -379,11 +379,54 @@ function folderCover(f) {
     class: 'cover-archive', type: 'button', title: 'Delete this empty folder', 'aria-label': `Delete folder ${f.name}`, html: icon('close', 16),
     onclick: (e) => { e.preventDefault(); e.stopPropagation(); removeFolder(f); },
   }) : null;
-  return h('div', { class: 'cover-wrap' }, del,
+  const edit = h('button', {
+    class: 'cover-edit', type: 'button', title: 'Rename this folder', 'aria-label': `Rename folder ${f.name}`, html: icon('pen', 16),
+    style: { right: f.empty ? '44px' : '8px' },
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); renameFolderDialog(f); },
+  });
+  return h('div', { class: 'cover-wrap' }, edit, del,
     h('a', { class: 'folder-tile', href: folderHash(f), title: `Open folder ${f.path}` },
       h('span', { class: 'ic', html: icon('folder', 54) }),
       h('span', { class: 'fname' }, f.name)),
     h('div', { class: 'under' }, f.empty ? 'empty folder' : `${n} notebook${n === 1 ? '' : 's'}`));
+}
+
+/** Pencil dialog: rename a folder. The directory is renamed in every place that has it (Local, Saved, Shared). */
+function renameFolderDialog(f) {
+  const err = h('div', { class: 'err-text' });
+  const nameIn = h('input', { name: 'name', value: f.name, required: true, pattern: '[A-Za-z0-9][A-Za-z0-9._-]*', autocomplete: 'off', maxlength: 64 });
+  const where = f.places?.length ? f.places.map((p) => PLACE_LABEL[p]).join(', ') : 'Local';
+  const form = h('form', { class: 'dlg', method: 'dialog' },
+    h('h2', {}, 'Rename folder'),
+    h('p', { class: 'sub' }, f.path),
+    h('label', { class: 'field' }, 'Folder name', nameIn),
+    h('p', { class: 'hint' }, `Renamed everywhere the folder exists: ${where}. Notebooks keep their names and links. Saved and Shared copies show up as changes to sync. Not allowed while an agent is working in one of its notebooks.`),
+    err,
+    h('div', { class: 'actions' },
+      h('button', { class: 'pill', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+      h('button', { class: 'pill primary', type: 'submit' }, 'Rename')));
+  const dlg = h('dialog', {}, form);
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = nameIn.value.trim();
+    if (name === f.name) { dlg.close(); return; }
+    try {
+      const r = await api.renameFolder({ path: f.path, name });
+      // If this folder (or one inside it) is the one on screen, follow it to its new path.
+      const open = decodeURIComponent(location.hash).replace(/^#folder\//, '');
+      if (location.hash.startsWith('#folder/') && (open === r.from || open.startsWith(`${r.from}/`))) location.hash = `#folder/${r.path}${open.slice(r.from.length)}`;
+      dlg.close();
+      toast(`Renamed folder “${r.from}” to “${r.path}”`);
+      await refresh();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  dlg.showModal();
+  nameIn.focus();
+  nameIn.select();
 }
 
 async function removeFolder(f) {
