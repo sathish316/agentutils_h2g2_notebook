@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { ROOT, NOTEBOOKS_DIR, FRAMEWORK_DIR, NAME_RE, listNotebooks, loadNotebookForViewer, isNotebook, validateNotebook, createNotebook, setArchived, setTags, setDetails, notebookDir } from '../lib/notebook.mjs';
-import { H2G2_DIR, REPO_PLACES, locate } from '../lib/paths.mjs';
+import { H2G2_DIR, REPO_PLACES, locate, splitNotebookPath } from '../lib/paths.mjs';
+import { listFolders, createFolder, deleteFolder, moveToFolder, MAX_FOLDER_DEPTH } from '../lib/folders.mjs';
 import { movePlace, syncNotebook, repoStatus, placeNotices, DEFAULT_MESSAGES } from '../lib/places.mjs';
 import { agentCommitMessage } from './commit-message.mjs';
 import { AcpConnection } from './acp-client.mjs';
@@ -86,10 +87,12 @@ function watchNotebookRoot(dir) {
   if (!fs.existsSync(dir)) return;
   watchers.set(dir, fs.watch(dir, { recursive: true }, (_e, file) => {
     if (!file) return;
-    const [nb, ...rest] = file.split(path.sep);
-    if (!NAME_RE.test(nb) || rest.some((p) => p.startsWith('.'))) return;
+    // A notebook may sit inside a folder: 'db/kafka/chapters/a.md' belongs to notebook 'kafka'.
+    const hit = splitNotebookPath(dir, file);
+    if (!hit || !NAME_RE.test(hit.name) || !hit.rest || hit.rest.split('/').some((p) => p.startsWith('.'))) return;
+    const nb = hit.name;
     const files = pending.get(nb) || new Set();
-    files.add(rest.join('/'));
+    files.add(hit.rest);
     pending.set(nb, files);
     debounce(nb, () => {
       sessions.emit(nb, 'notebook_changed', { files: [...(pending.get(nb) || [])] });
@@ -116,10 +119,25 @@ async function api(req, res, parts) {
     return json(res, 200, { repos: await repoStatus(), notices: await placeNotices(), defaultMessages: DEFAULT_MESSAGES });
   }
   if (parts[0] === 'notebooks' && parts.length === 1 && method === 'POST') {
-    const { name, title, scope, description, message, agentId } = await readBody(req);
-    await createNotebook(String(name || ''), { title, scope, description });
+    const { name, title, scope, description, message, agentId, folder } = await readBody(req);
+    await createNotebook(String(name || ''), { title, scope, description, folder: folder || '' });
     const job = message?.trim() ? await sessions.ask(name, { agentId, mode: 'new-chapter', message, autoApprove: true }) : null;
     return json(res, 201, { name, jobId: job?.id || null });
+  }
+  if (parts[0] === 'folders' && parts.length === 1 && method === 'GET') return json(res, 200, { folders: listFolders(), maxDepth: MAX_FOLDER_DEPTH });
+  if (parts[0] === 'folders' && parts.length === 1 && method === 'POST') {
+    const { name, parent = '' } = await readBody(req);
+    return json(res, 201, await createFolder(String(name || ''), { parent: String(parent || '') }));
+  }
+  if (parts[0] === 'folders' && parts.length === 1 && method === 'DELETE') {
+    const { path: folder } = await readBody(req);
+    return json(res, 200, await deleteFolder(String(folder || '')));
+  }
+  if (parts[0] === 'notebooks' && parts[2] === 'folder' && method === 'PUT') {
+    const name = parts[1];
+    if (!locate(name)) return json(res, 404, { error: `No notebook folder "${name}"` });
+    const { folder = '' } = await readBody(req);
+    return json(res, 200, await moveToFolder(name, String(folder || ''), { isBusy: (n) => sessions.isBusy(n) }));
   }
   if (parts[0] === 'notebooks' && parts[2] === 'archive' && method === 'POST') {
     // Works for empty folders too (no notebook.json yet), so it runs before the isNotebook check.
